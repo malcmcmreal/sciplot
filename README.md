@@ -8,8 +8,13 @@ Live: https://malcmcmreal.github.io/sciplot/
 
 ## What it does
 
-- **Data:** drop in a `.csv`, `.tsv`, `.txt`, `.dat`, `.xlsx` or `.xls` file, or paste cells copied from Excel. It detects the delimiter and the header row, skips `#`/`%` comment lines, and lets you pick a sheet in Excel files. A data table shows every row.
-- **Plots:** scatter, line, line + markers, step and grouped bar, with any number of series and X/Y error bars.
+- **Data:** drop in a `.csv`, `.tsv`, `.txt`, `.dat`, `.xlsx` or `.xls` file, or paste cells copied from Excel. It detects the delimiter and the header row, skips `#`/`%` comment lines and metadata blocks above the table, and lets you pick a sheet in Excel files. A data table shows every row.
+- **Header row:** choose the header row yourself (click it in the **Raw file** view, or type its number). Rows above it are ignored, and you can skip rows straight after it, such as a units row.
+- **Plots:** scatter, line, line + markers, step, grouped bar and histogram, with any number of series and X/Y error bars.
+- **Colour, size and shape by variable:** in scatter and line + marker plots, colour points by any column (numeric columns use a colour map with a colour bar; text columns use the palette with a legend), size them by a column, and set marker shape by a column. Colour range, log colour scale and colour-bar label are adjustable. Hovering over a point shows its mapped values.
+- **Per-series styling:** marker shape, colour (or from the palette) and line style per series, plus global marker size, opacity and marker edge colour.
+- **Histograms:** automatic bins, a fixed bin width, or a set number of bins, plus a bin range and bin outline colour. Bars can be coloured by the mean, median, minimum, maximum or standard deviation of another column within each bin (e.g. mean eU per age bin), with a colour bar. Optional KDE curve.
+- **Reference lines:** mean (± SD), median (± MAD) and, for x–y data with an error column, the inverse-variance weighted mean (± σ, with MSWD and n). Lines can be drawn for Y, X or both, with optional ±1σ or ±2σ shading and their values in the legend. In histograms they are vertical lines on the binned variable. Also custom horizontal and vertical lines and a 1:1 line.
 - **Distributions (seaborn):** histogram (optional KDE overlay), KDE with rug, box, violin, strip and swarm plots. These compare the Y series side by side, or split one series by a text column (e.g. sample or lithology).
 - **Fits:** linear, quadratic or cubic per series, optionally weighted by 1/σ, with an optional 68/95/99% confidence band (seaborn `regplot`, bootstrapped). The equation and R² appear in the legend and below the plot.
 - **Interactive preview:**

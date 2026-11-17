@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 2;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 3;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -76,11 +76,13 @@ async function loadData(sheet = null) {
     if (/\.xls$/i.test(curFile.name)) await py.pyimport('micropip').install('xlrd');
     const path = '/tmp/' + curFile.name.replace(/[^\w.\-]/g, '_');
     py.FS.writeFile(path, curFile.bytes);
-    info = pyCall('plotter.load_file(*_args)', [path, curFile.name, $('header').value, sheet ?? curFile.sheet]);
+    info = pyCall('plotter.load_file(*_args)', [path, curFile.name, $('header').value, sheet ?? curFile.sheet,
+      +$('headerrow').value || 1, +$('skipafter').value || 0]);
     curFile.sheet = info.sheet;
     $('sheetRow').hidden = !info.sheets.length;
     $('sheet').innerHTML = info.sheets.map((s) => `<option ${s === info.sheet ? 'selected' : ''}>${esc(s)}</option>`).join('');
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
+    showRaw();
     pending = null;
     showTable();
     scheduleRender(0);
@@ -115,7 +117,32 @@ $('pasteLoad').addEventListener('click', () => {
   const t = $('paste').value;
   if (t.trim()) setFile('pasted.txt', new TextEncoder().encode(t));
 });
-$('header').addEventListener('change', () => curFile && py && loadData());
+let headerTimer = null;
+function reloadHeader() {
+  $('headerRows').hidden = $('header').value !== 'row';
+  clearTimeout(headerTimer);
+  headerTimer = setTimeout(() => curFile && py && loadData(), 300);
+}
+$('header').addEventListener('change', () => {
+  if ($('header').value === 'row' && info) $('rawPanel').open = true;
+  reloadHeader();
+});
+$('headerrow').addEventListener('input', reloadHeader);
+$('skipafter').addEventListener('input', reloadHeader);
+
+function showRaw() {
+  const hr = $('header').value === 'row' ? (+$('headerrow').value || 1) : null;
+  $('rawTable').innerHTML = (info.raw || []).map(([n, t]) =>
+    `<tr data-n="${n}" class="${hr === n ? 'hdr' : hr && n < hr ? 'above' : ''}"><td class="rown">${n}</td><td>${esc(t)}</td></tr>`).join('');
+}
+$('rawTable').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  $('header').value = 'row';
+  $('headerrow').value = tr.dataset.n;
+  excluded.clear();
+  reloadHeader();
+});
 $('sheet').addEventListener('change', () => { excluded.clear(); loadData($('sheet').value); });
 
 // ---------------------------------------------------------------- columns & series
@@ -132,12 +159,21 @@ function fillColumns(pref = {}) {
   if (x !== '' && !cols.includes(x)) x = firstNum ?? cols[0];
   $('x').innerHTML = colOptions(x, '(row number)');
   $('x').value = x;
+  for (const el of document.querySelectorAll('select[data-col]')) {
+    const want = pref.cols && el.id in pref.cols ? pref.cols[el.id] : el.value;
+    el.innerHTML = colOptions(cols.includes(want) ? want : '', 'none');
+  }
   $('seriesList').innerHTML = '';
   const keep = (pref.series || []).filter((s) => cols.includes(s.y));
   if (keep.length) keep.forEach(addSeries);
   else addSeries({ y: cols.find((c, i) => info.numeric[i] && c !== x) ?? cols[0] });
   updateVisibility();
 }
+
+const MARKER_OPTS = [['auto', 'auto'], ['o', '● circle'], ['s', '■ square'], ['^', '▲ triangle'],
+  ['v', '▼ triangle down'], ['D', '◆ diamond'], ['P', '✚ plus (filled)'], ['X', '✖ cross (filled)'],
+  ['h', '⬢ hexagon'], ['p', '⬟ pentagon'], ['*', '★ star'], ['+', '+ plus'], ['x', '× cross'], ['.', '· point']]
+  .map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
 
 function addSeries(s = {}) {
   const d = document.createElement('div');
@@ -148,8 +184,31 @@ function addSeries(s = {}) {
     <div class="row s-err"><label>X error</label><select class="s-xerr">${colOptions(s.xerr, 'none')}</select></div>
     <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
     <div class="row s-fitrow"><label>Fit</label><select class="s-fit">
-      <option value="0">None</option><option value="1">Linear</option><option value="2">Quadratic</option><option value="3">Cubic</option></select></div>`;
+      <option value="0">None</option><option value="1">Linear</option><option value="2">Quadratic</option><option value="3">Cubic</option></select></div>
+    <div class="row s-look"><label>Colour</label><div class="s-colorwrap">
+      <input type="color" class="s-color" value="${s.color || '#000000'}" ${s.color ? 'data-set="1"' : ''}>
+      <span class="s-auto">${s.color ? '' : 'from palette'}</span>
+      <button type="button" class="s-colorreset" ${s.color ? '' : 'hidden'}>reset</button></div></div>
+    <div class="row2 s-look">
+      <div class="row s-markerrow"><label>Marker</label><select class="s-marker">${MARKER_OPTS}</select></div>
+      <div class="row s-lsrow"><label>Line</label><select class="s-ls">
+        <option value="-">solid</option><option value="--">dashed</option><option value=":">dotted</option><option value="-.">dash-dot</option></select></div>
+    </div>`;
   d.querySelector('.s-fit').value = String(s.fit || 0);
+  d.querySelector('.s-marker').value = s.marker || 'auto';
+  d.querySelector('.s-ls').value = s.ls || '-';
+  const ci = d.querySelector('.s-color');
+  ci.addEventListener('input', () => {
+    ci.dataset.set = '1';
+    d.querySelector('.s-auto').textContent = '';
+    d.querySelector('.s-colorreset').hidden = false;
+  });
+  d.querySelector('.s-colorreset').addEventListener('click', () => {
+    delete ci.dataset.set;
+    d.querySelector('.s-auto').textContent = 'from palette';
+    d.querySelector('.s-colorreset').hidden = true;
+    scheduleRender(0);
+  });
   d.querySelector('.rm').addEventListener('click', () => {
     if (document.querySelectorAll('.series').length > 1) { d.remove(); scheduleRender(); }
   });
@@ -172,6 +231,9 @@ function getSeries() {
     xerr: d.querySelector('.s-xerr').value,
     label: d.querySelector('.s-label').value,
     fit: +d.querySelector('.s-fit').value,
+    color: d.querySelector('.s-color').dataset.set ? d.querySelector('.s-color').value : '',
+    marker: d.querySelector('.s-marker').value,
+    ls: d.querySelector('.s-ls').value,
   }));
 }
 
@@ -182,10 +244,32 @@ const CATEGORICAL = new Set(['bar', ...GROUPED]);
 function updateVisibility() {
   const k = $('kind').value;
   const hist = k === 'hist', bar = k === 'bar', dist = DIST.has(k), grouped = GROUPED.has(k);
-  $('binsRow').hidden = !hist;
-  $('densRow').hidden = !hist;
-  $('histkdeRow').hidden = !hist;
+  const mappable = k === 'scatter' || k === 'linemarkers';
+  $('histRows').hidden = !hist;
+  $('binwidthRow').hidden = $('binmode').value !== 'width';
+  $('binsRow').hidden = $('binmode').value !== 'count';
+  const hc = hist && $('histcolor').value !== '';
+  $('histstatRow').hidden = !hc;
+  $('histcolorHint').hidden = !hc;
   $('kdeRows').hidden = k !== 'kde';
+  $('bwRow').hidden = !(k === 'kde' || (hist && $('histkde').checked));
+  $('mapSection').hidden = !(mappable || hc);
+  $('mapRows').hidden = !mappable;
+  const hueCol = $('hue').value, hueIdx = info ? info.columns.indexOf(hueCol) : -1;
+  const hueNumeric = hueIdx >= 0 && info.numeric[hueIdx];
+  $('huecatRow').hidden = !(mappable && hueNumeric);
+  $('scaleRows').hidden = !((mappable && hueNumeric && !$('huecat').checked) || hc);
+  $('huelogRow').hidden = hc && !mappable;
+  $('sizeRangeRow').hidden = $('sizeby').value === '';
+  const xy = !dist && !bar;
+  $('refaxisRow').hidden = !xy;
+  $('refwmeanRow').hidden = !xy;
+  $('refwmeanHint').hidden = !xy;
+  $('vlinesRow').hidden = CATEGORICAL.has(k);
+  $('oneoneRow').hidden = !xy;
+  document.querySelectorAll('.series .s-look').forEach((el) => { el.hidden = GROUPED.has(k) || k === 'kde'; });
+  document.querySelectorAll('.series .s-markerrow').forEach((el) => { el.hidden = !(k === 'scatter' || k === 'linemarkers'); });
+  document.querySelectorAll('.series .s-lsrow').forEach((el) => { el.hidden = !(k === 'line' || k === 'linemarkers' || k === 'step'); });
   $('violinRow').hidden = k !== 'violin';
   $('distpointsRow').hidden = !(k === 'box' || k === 'violin');
   $('xRow').hidden = hist || k === 'kde';
@@ -207,20 +291,26 @@ function getConfig({ withExcluded = true } = {}) {
   }
   c.series = getSeries();
   c.header = $('header').value;
+  c.headerrow = +$('headerrow').value || 1;
+  c.skipafter = +$('skipafter').value || 0;
   if (curFile?.sheet) c.sheet = curFile.sheet;
   if (withExcluded) c.excluded = [...excluded].sort((a, b) => a - b);
   return c;
 }
 
 function applyConfig(c) {
+  const cols = {};
   for (const el of cfgEls()) {
     if (!(el.id in c) || el.id === 'x') continue;
+    if (el.hasAttribute('data-col')) { cols[el.id] = c[el.id]; continue; }
     if (el.type === 'checkbox') el.checked = !!c[el.id];
     else el.value = c[el.id];
   }
   if (c.header) $('header').value = c.header;
+  if (c.headerrow) $('headerrow').value = c.headerrow;
+  if (c.skipafter !== undefined) $('skipafter').value = c.skipafter;
   if (Array.isArray(c.excluded)) excluded = new Set(c.excluded);
-  const pref = { x: c.x ?? $('x').value, series: c.series || [] };
+  const pref = { x: c.x ?? $('x').value, series: c.series || [], cols };
   if (info) fillColumns(pref); else pending = pref;
   updateVisibility();
 }
@@ -308,7 +398,12 @@ function renderPreview() {
     $('stage').classList.add('show');
     $('placeholder').hidden = true;
     $('msgs').textContent = r.msgs.join('\n');
-    document.querySelectorAll('.series').forEach((d, i) => d.style.setProperty('--sc', r.colors[i] || '#2f6fb0'));
+    document.querySelectorAll('.series').forEach((d, i) => {
+      d.style.setProperty('--sc', r.colors[i] || '#2f6fb0');
+      const ci = d.querySelector('.s-color');
+      if (!ci.dataset.set && /^#[0-9a-f]{6}$/i.test(r.colors[i] || '')) ci.value = r.colors[i];
+    });
+    if (info) showRaw();
     $('swatches').innerHTML = r.swatches.map((h) => `<span style="background:${h}" title="${h}"></span>`).join('');
     document.querySelectorAll('[data-exp], #dlScript').forEach((b) => { b.disabled = false; });
     $('resetZoom').disabled = !['xmin', 'xmax', 'ymin', 'ymax'].some((id) => $(id).value !== '');
@@ -473,7 +568,7 @@ canvas.addEventListener('mousemove', (e) => {
   if (hover) {
     const rl = info.rowlabels ? `<b>${esc(info.rowlabels.values[hover.row])}</b> · ` : '';
     tip.innerHTML = `${rl}row ${hover.row + 1}${hover.ex ? ' (excluded)' : ''}<br>${esc(hover.label)}<br>` +
-      `x = ${fmt(hover.x)}, y = ${fmt(hover.y)}` +
+      `x = ${fmt(hover.x)}, y = ${fmt(hover.y)}` + mappedValues(hover.row) +
       (tool === 'exclude' ? `<br><i>Click to ${hover.ex ? 'include' : 'exclude'}</i>` : '');
     tip.style.left = hover.qx + 'px';
     tip.style.top = hover.qy + 'px';
@@ -483,6 +578,16 @@ canvas.addEventListener('mousemove', (e) => {
   if (newRow !== hoverRow) { hoverRow = newRow; markTableRows(); }
   drawOverlay([mx, my]);
 });
+function mappedValues(row) {
+  const out = [];
+  for (const id of ['hue', 'sizeby', 'styleby']) {
+    const col = $(id).value;
+    const ci = info.columns.indexOf(col);
+    if (col && ci >= 0 && info.preview[row]) out.push(`${esc(col)} = ${esc(info.preview[row][ci])}`);
+  }
+  return out.length ? '<br>' + out.join('<br>') : '';
+}
+
 canvas.addEventListener('mouseleave', () => {
   hover = null; drag = null; hoverRow = null;
   $('tip').hidden = true; $('readout').textContent = '';
@@ -540,6 +645,7 @@ delete DEFAULTS.x;
   if (m) { try { saved = decodeCfg(m[1]); } catch {} }
   if (!saved) { try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch {} }
   if (saved) applyConfig(saved);
+  $('headerRows').hidden = $('header').value !== 'row';
   updateVisibility();
 })();
 boot();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -19,8 +19,8 @@
 
   <main class="layout">
     <aside class="controls">
-      <section>
-        <h2>Data</h2>
+      <details class="sec" open>
+        <summary>Data</summary>
         <div id="drop" class="drop" tabindex="0" role="button">
           <strong>Drop a file here</strong> or click to choose<br>
           <span class="hint">.csv .txt .dat .tsv .xlsx .xls</span>
@@ -34,6 +34,8 @@
             <option value="examples/age-elevation.csv">Age–elevation profile (.csv)</option>
             <option value="examples/raman-spectrum.txt">Raman spectrum (.txt)</option>
             <option value="examples/track-lengths.xlsx">Track lengths (.xlsx, 2 sheets)</option>
+            <option value="examples/ahe-grains.csv">AHe single grains: eU, Rs, lithology (.csv)</option>
+            <option value="examples/instrument-export.csv">Instrument export with metadata header (.csv)</option>
           </select>
         </div>
         <details class="sub">
@@ -42,12 +44,17 @@
           <button type="button" id="pasteLoad" class="small">Use pasted data</button>
         </details>
         <div class="row"><label for="header">Header row</label>
-          <select id="header"><option value="auto">Auto-detect</option><option value="yes">First row</option><option value="no">None</option></select></div>
+          <select id="header"><option value="auto">Auto-detect</option><option value="yes">First row</option><option value="row">Choose row…</option><option value="no">None (no names)</option></select></div>
+        <div id="headerRows" hidden>
+          <div class="row"><label for="headerrow">Header is row</label><input type="number" id="headerrow" value="1" min="1"></div>
+          <div class="row"><label for="skipafter">Skip after it</label><input type="number" id="skipafter" value="0" min="0" title="Rows to skip straight after the header, e.g. a units row"></div>
+          <p class="hint">Rows above the header (instrument metadata etc.) are ignored. Tip: click a row in <b>Raw file</b> below the plot to use it as the header.</p>
+        </div>
         <div class="row" id="sheetRow" hidden><label for="sheet">Sheet</label><select id="sheet"></select></div>
-      </section>
+      </details>
 
-      <section>
-        <h2>Plot</h2>
+      <details class="sec" open>
+        <summary>Plot</summary>
         <div class="row"><label for="kind">Type</label>
           <select id="kind" data-cfg>
             <optgroup label="X–Y">
@@ -70,21 +77,90 @@
         <p class="hint" id="groupHint" hidden>Choose a text column to split one series into groups, or leave as “(series)” to compare the Y series side by side.</p>
         <div id="seriesList"></div>
         <button type="button" id="addSeries" class="ghost small">+ Add series</button>
-        <div class="row" id="binsRow" hidden><label for="bins">Bins</label><input type="text" id="bins" data-cfg placeholder="auto"></div>
-        <label class="check" id="densRow" hidden><input type="checkbox" id="density" data-cfg> Normalise (density)</label>
-        <label class="check" id="histkdeRow" hidden><input type="checkbox" id="histkde" data-cfg> Overlay KDE curve</label>
+        <div id="histRows" hidden>
+          <div class="row"><label for="binmode">Bins</label>
+            <select id="binmode" data-cfg><option value="auto">Automatic</option><option value="width">Set bin width</option><option value="count">Set number of bins</option></select></div>
+          <div class="row" id="binwidthRow" hidden><label for="binwidth">Bin width</label><input type="text" id="binwidth" data-cfg placeholder="e.g. 2"></div>
+          <div class="row" id="binsRow" hidden><label for="bins">Number</label><input type="number" id="bins" data-cfg value="20" min="1"></div>
+          <div class="row"><label>Bin range</label><div class="pair"><input type="text" id="binmin" data-cfg placeholder="start"><input type="text" id="binmax" data-cfg placeholder="end"></div></div>
+          <div class="row"><label for="binedge">Bin outline</label>
+            <select id="binedge" data-cfg><option value="black">Black</option><option value="white">White</option><option value="none">None</option></select></div>
+          <div class="row"><label for="histmulti">Several series</label>
+            <select id="histmulti" data-cfg><option value="step">Outlines</option><option value="overlay">Overlapping (transparent)</option></select></div>
+          <label class="check"><input type="checkbox" id="density" data-cfg> Normalise (density)</label>
+          <label class="check"><input type="checkbox" id="histkde" data-cfg> Overlay KDE curve</label>
+          <div class="row"><label for="histcolor">Colour bins by</label><select id="histcolor" data-cfg data-col></select></div>
+          <div class="row" id="histstatRow" hidden><label for="histstat">using the</label>
+            <select id="histstat" data-cfg><option value="mean">mean</option><option value="median">median</option><option value="min">minimum</option><option value="max">maximum</option><option value="std">std. deviation</option></select></div>
+          <p class="hint" id="histcolorHint" hidden>Each bar is coloured by that statistic of the chosen column for the rows in the bin. Colour map and range are under <b>Colour, size &amp; shape</b>.</p>
+        </div>
         <div id="kdeRows" hidden>
           <label class="check"><input type="checkbox" id="kdefill" data-cfg checked> Fill under curve</label>
           <label class="check"><input type="checkbox" id="rug" data-cfg> Rug (tick for each value)</label>
-          <div class="row"><label for="bw">Smoothing</label><input type="number" id="bw" data-cfg value="1" step="0.1" min="0.1" title="Bandwidth adjustment: below 1 is less smooth, above 1 is smoother"></div>
         </div>
+        <div class="row" id="bwRow" hidden><label for="bw">KDE smoothing</label><input type="number" id="bw" data-cfg value="1" step="0.1" min="0.1" title="Bandwidth adjustment: below 1 is less smooth, above 1 is smoother"></div>
         <div class="row" id="violinRow" hidden><label for="violininner">Inside violin</label>
           <select id="violininner" data-cfg><option value="box">Mini box plot</option><option value="quart">Quartile lines</option><option value="stick">Line per value</option><option value="point">Point per value</option></select></div>
         <label class="check" id="distpointsRow" hidden><input type="checkbox" id="distpoints" data-cfg> Overlay individual values</label>
-      </section>
+      </details>
 
-      <section>
-        <h2>Axes</h2>
+      <details class="sec" id="mapSection" open>
+        <summary>Colour, size &amp; shape</summary>
+        <div id="mapRows">
+          <p class="hint">Map columns onto the points (scatter and line + markers).</p>
+          <div class="row"><label for="hue">Colour by</label><select id="hue" data-cfg data-col></select></div>
+          <label class="check" id="huecatRow" hidden><input type="checkbox" id="huecat" data-cfg> Treat numbers as categories</label>
+          <div class="row"><label for="sizeby">Size by</label><select id="sizeby" data-cfg data-col></select></div>
+          <div class="row" id="sizeRangeRow" hidden><label>Size range</label><div class="pair"><input type="text" id="sizemin" data-cfg value="2" title="Smallest marker (pt)"><input type="text" id="sizemax" data-cfg value="9" title="Largest marker (pt)"></div></div>
+          <div class="row"><label for="styleby">Shape by</label><select id="styleby" data-cfg data-col></select></div>
+          <div class="row"><label for="edgecolor">Marker edge</label>
+            <select id="edgecolor" data-cfg><option value="black">Black</option><option value="white">White</option><option value="none">None</option></select></div>
+        </div>
+        <div id="scaleRows" hidden>
+          <div class="row"><label for="cmap">Colour map</label>
+            <select id="cmap" data-cfg>
+              <optgroup label="Sequential">
+                <option value="viridis">viridis</option><option value="cividis">cividis</option><option value="plasma">plasma</option>
+                <option value="inferno">inferno</option><option value="magma">magma</option>
+                <option value="rocket">rocket</option><option value="rocket_r">rocket (reversed)</option>
+                <option value="mako">mako</option><option value="mako_r">mako (reversed)</option>
+                <option value="flare">flare</option><option value="crest">crest</option>
+                <option value="YlOrRd">YlOrRd</option><option value="Blues">Blues</option><option value="Greys">Greys</option>
+              </optgroup>
+              <optgroup label="Diverging">
+                <option value="vlag">vlag</option><option value="icefire">icefire</option><option value="coolwarm">coolwarm</option>
+                <option value="RdBu_r">RdBu</option><option value="Spectral_r">Spectral</option>
+              </optgroup>
+              <optgroup label="Rainbow (use with care)">
+                <option value="turbo">turbo</option>
+              </optgroup>
+            </select></div>
+          <div class="row"><label>Colour range</label><div class="pair"><input type="text" id="huemin" data-cfg placeholder="min"><input type="text" id="huemax" data-cfg placeholder="max"></div></div>
+          <label class="check" id="huelogRow"><input type="checkbox" id="huelog" data-cfg> Log colour scale</label>
+          <div class="row"><label for="huelabel">Colour bar label</label><input type="text" id="huelabel" data-cfg placeholder="column name"></div>
+        </div>
+      </details>
+
+      <details class="sec" open>
+        <summary>Reference lines</summary>
+        <div class="checks4">
+          <label class="check"><input type="checkbox" id="refmean" data-cfg> Mean</label>
+          <label class="check"><input type="checkbox" id="refmedian" data-cfg> Median</label>
+          <label class="check" id="refwmeanRow"><input type="checkbox" id="refwmean" data-cfg> Weighted mean</label>
+        </div>
+        <p class="hint" id="refwmeanHint">Weighted mean uses 1/σ² from the error column and reports MSWD.</p>
+        <div class="row" id="refaxisRow"><label for="refaxis">Of</label>
+          <select id="refaxis" data-cfg><option value="y">Y values (horizontal line)</option><option value="x">X values (vertical line)</option><option value="both">Both</option></select></div>
+        <div class="row"><label for="refband">Shade</label>
+          <select id="refband" data-cfg><option value="0">No band</option><option value="1">± 1σ</option><option value="2">± 2σ</option></select></div>
+        <label class="check"><input type="checkbox" id="reflegend" data-cfg checked> Show values in legend</label>
+        <div class="row"><label for="hlines">Lines at y =</label><input type="text" id="hlines" data-cfg placeholder="e.g. 10, 25"></div>
+        <div class="row" id="vlinesRow"><label for="vlines">Lines at x =</label><input type="text" id="vlines" data-cfg placeholder="e.g. 0"></div>
+        <label class="check" id="oneoneRow"><input type="checkbox" id="oneone" data-cfg> 1:1 line</label>
+      </details>
+
+      <details class="sec" open>
+        <summary>Axes</summary>
         <div class="row"><label for="title">Title</label><input type="text" id="title" data-cfg></div>
         <div class="row"><label for="xlabel">X label</label><input type="text" id="xlabel" data-cfg placeholder="column name"></div>
         <div class="row"><label for="ylabel">Y label</label><input type="text" id="ylabel" data-cfg placeholder="column name"></div>
@@ -101,10 +177,10 @@
         <label class="check"><input type="checkbox" id="minor" data-cfg checked> Minor ticks</label>
         <div class="row"><label for="grid">Grid</label><select id="grid" data-cfg><option value="none">None</option><option value="major">Major</option><option value="both">Major + minor</option></select></div>
         <div class="row"><label for="xrot">X tick angle</label><input type="number" id="xrot" data-cfg value="0" step="15" min="0" max="90"></div>
-      </section>
+      </details>
 
-      <section>
-        <h2>Style</h2>
+      <details class="sec" open>
+        <summary>Style</summary>
         <div class="row"><label for="size">Figure size</label>
           <select id="size" data-cfg>
             <option value="single">Single column (89 mm)</option>
@@ -163,6 +239,7 @@
         <div class="row"><label for="markerfill">Markers</label>
           <select id="markerfill" data-cfg><option value="filled">Filled</option><option value="open">Open</option></select></div>
         <label class="check"><input type="checkbox" id="varymarkers" data-cfg checked> Different marker shape per series</label>
+        <div class="row"><label for="alpha">Opacity</label><input type="number" id="alpha" data-cfg value="1" step="0.05" min="0.05" max="1"></div>
         <div class="row"><label for="markersize">Marker size</label><input type="number" id="markersize" data-cfg value="4" step="0.5" min="1"></div>
         <div class="row"><label for="linewidth">Line width</label><input type="number" id="linewidth" data-cfg value="1.2" step="0.1" min="0.2"></div>
         <div class="row"><label for="capsize">Error bar caps</label><input type="number" id="capsize" data-cfg value="2" step="0.5" min="0"></div>
@@ -171,10 +248,10 @@
         <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
         <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
         <div class="row"><label for="panel">Panel label</label><input type="text" id="panel" data-cfg placeholder="e.g. (a)"></div>
-      </section>
+      </details>
 
-      <section>
-        <h2>Fitting</h2>
+      <details class="sec" open>
+        <summary>Fitting</summary>
         <p class="hint">Choose a fit in each series box. Click points on the plot (Exclude tool) to leave them out of the fit.</p>
         <label class="check"><input type="checkbox" id="fitlegend" data-cfg checked> Fit equation in legend</label>
         <label class="check"><input type="checkbox" id="weightedfit" data-cfg> Weight fit by 1/σ (Y error column)</label>
@@ -182,7 +259,7 @@
           <select id="ci" data-cfg><option value="0">None</option><option value="68">68% (≈1σ)</option><option value="95">95%</option><option value="99">99%</option></select></div>
         <p class="hint">Bands are bootstrapped by seaborn's <code>regplot</code>.</p>
         <label class="check"><input type="checkbox" id="showexcluded" data-cfg checked> Show excluded points as grey ×</label>
-      </section>
+      </details>
 
       <section class="actions">
         <button type="button" id="copyLink" class="ghost small">Copy link to these settings</button>
@@ -234,6 +311,10 @@
         <h2>Data</h2>
         <div class="hint" id="dataInfo"></div>
         <div class="scroll"><table id="dataTable"></table></div>
+        <details class="sub" id="rawPanel">
+          <summary>Raw file (first 40 rows) – click a row to make it the header</summary>
+          <div class="scroll"><table id="rawTable" class="raw"></table></div>
+        </details>
       </div>
     </section>
   </main>
@@ -243,6 +324,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=2"></script>
+  <script type="module" src="app.js?v=3"></script>
 </body>
 </html>

@@ -1,9 +1,11 @@
 """
-plotter.py — publication-style plotting core.
+plotter.py — publication-style plotting core for SciPlot.
 
 Runs in the browser via Pyodide (loaded by index.html), and also runs
 unchanged in a normal Python install, so any figure made on the site can
-be reproduced from a script.
+be reproduced from a script:
+
+    python plotter.py DATAFILE SETTINGS.json [figure.pdf]
 """
 import io
 import csv
@@ -15,6 +17,8 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch, Rectangle
 from matplotlib.ticker import AutoMinorLocator
 
 try:                      # seaborn: palettes, themes, distribution plots, CI bands
@@ -35,9 +39,12 @@ PALETTES = {
 SNS_PALETTES = {"deep", "muted", "bright", "pastel", "dark", "colorblind", "Set1", "Set2",
                 "Set3", "Paired", "tab10", "husl", "hls", "rocket", "mako", "flare", "crest",
                 "magma", "icefire", "vlag", "cubehelix"}
+SNS_CMAPS = {"rocket", "mako", "flare", "crest", "icefire", "vlag"}
 SNS_THEMES = {"ticks", "white", "whitegrid", "darkgrid"}
 CATEGORICAL = {"bar", "box", "violin", "strip", "swarm"}
-MARKERS = ["o", "s", "^", "D", "v", "P", "X", "<", ">", "h"]
+MARKERS = ["o", "s", "^", "D", "v", "P", "X", "<", ">", "h", "p", "*"]
+LINESTYLES = {"-": "-", "--": "--", ":": ":", "-.": "-."}
+REF_STYLES = {"mean": "-.", "median": ":", "wmean": (0, (6, 2))}
 
 FIG_SIZES = {          # inches (w, h)
     "single": (3.5, 2.6),     # single journal column (~89 mm)
@@ -48,19 +55,31 @@ FIG_SIZES = {          # inches (w, h)
 
 
 # ----------------------------------------------------------------- loading
-def _read_text_table(path):
+def _read_lines(path):
     with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
-        lines = [ln.rstrip("\r\n") for ln in f]
-    lines = [ln for ln in lines if ln.strip() and not ln.lstrip().startswith(("#", "%", "//"))]
+        return [ln.rstrip("\r\n") for ln in f]
+
+
+def _is_comment(ln):
+    return ln.lstrip().startswith(("#", "%", "//"))
+
+
+def _parse_lines(lines, auto_trim=False):
     if not lines:
-        raise ValueError("File contains no data rows.")
-    sample = "\n".join(lines[:50])
+        raise ValueError("No data rows found (check the header row setting).")
+    sample = "\n".join(lines[len(lines) // 3:][:50])   # sniff the table body, not a metadata block
     try:
         sep = csv.Sniffer().sniff(sample, delimiters=",\t;|").delimiter
     except csv.Error:
         sep = None
-    if sep is None or all(ln.count(sep) == 0 for ln in lines[:20]):
+    if sep is None or sum(ln.count(sep) > 0 for ln in lines) < 0.5 * len(lines):
         sep = r"\s+"  # whitespace-delimited (typical .txt / instrument output)
+    if auto_trim and len(lines) > 4:
+        cnt = [len(ln.split(sep)) if sep != r"\s+" else len(ln.split()) for ln in lines]
+        tail = cnt[len(cnt) // 2:]
+        modal = max(set(tail), key=tail.count)
+        first = next((i for i, n in enumerate(cnt) if n == modal), 0)
+        lines = lines[first:]
     return pd.read_csv(io.StringIO("\n".join(lines)), sep=sep, header=None,
                        engine="python", skipinitialspace=True)
 
@@ -105,23 +124,44 @@ def _coerce(df):
         if num.notna().sum() >= 0.5 * df[c].notna().sum():
             df[c] = num
         else:
-            df[c] = df[c].astype(str).str.strip()
-    return df.reset_index(drop=True)
+            df[c] = df[c].astype(str).str.strip().replace({"nan": np.nan, "": np.nan})
+    return df.dropna(how="all").reset_index(drop=True)
 
 
-def load_file(path, name, header="auto", sheet=None):
-    """Load csv / tsv / txt / dat / xlsx / xls into the active DataFrame."""
+def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0):
+    """Load csv / tsv / txt / dat / xlsx / xls into the active DataFrame.
+
+    header: "auto" | "yes" (first row) | "no" | "row" (use row `headerrow`, 1-based,
+    ignoring everything above it). `skipafter` drops rows straight after the header
+    (e.g. a units row).
+    """
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    headerrow = max(1, int(headerrow or 1))
     sheets = []
     if ext in ("xlsx", "xlsm", "xls", "ods"):
         xl = pd.ExcelFile(path)
         sheets = xl.sheet_names
         sheet = sheet if sheet in sheets else sheets[0]
         raw = xl.parse(sheet, header=None)
+        raw_rows = [[i + 1, "  |  ".join(_fmt_cell(v) for v in r if not (isinstance(v, float) and np.isnan(v)))]
+                    for i, r in enumerate(raw.head(40).itertuples(index=False))]
+        if header == "row":
+            raw = raw.iloc[headerrow - 1:]
     else:
-        raw = _read_text_table(path)
+        lines = _read_lines(path)
+        raw_rows = [[i + 1, ln[:200]] for i, ln in enumerate(lines[:40])]
         sheet = None
-    df = _coerce(_apply_header(raw, header))
+        if header == "row":
+            body = [ln for ln in lines[headerrow - 1:] if ln.strip()]
+            if body:
+                body[0] = body[0].lstrip("#%/ \t")   # header written as a comment line
+        else:
+            body = [ln for ln in lines if ln.strip() and not _is_comment(ln)]
+        raw = _parse_lines(body, auto_trim=header == "auto")
+    df = _apply_header(raw.reset_index(drop=True), "yes" if header == "row" else header)
+    if skipafter and header == "row":
+        df = df.iloc[int(skipafter):]
+    df = _coerce(df)
     DATA["df"] = df
     head = df.head(2000)
     preview = head.astype(object).where(head.notna(), "").values.tolist()
@@ -131,6 +171,7 @@ def load_file(path, name, header="auto", sheet=None):
         "nrows": int(len(df)),
         "preview": [[_fmt_cell(v) for v in r] for r in preview],
         "rowlabels": _row_labels(df),
+        "raw": raw_rows,
         "sheets": sheets,
         "sheet": sheet,
     })
@@ -149,7 +190,7 @@ def _fmt_cell(v):
     return str(v)
 
 
-# --------------------------------------------------------------- plotting
+# --------------------------------------------------------------- helpers
 def _style(c):
     fam = c.get("font", "sans")
     rc = {
@@ -208,6 +249,32 @@ def _colors(name, n):
     return [pal[i % len(pal)] for i in range(n)]
 
 
+def _cmap(name):
+    name = name or "viridis"
+    rev = name.endswith("_r")
+    base = name[:-2] if rev else name
+    if base in SNS_CMAPS and sns is not None:
+        cm = sns.color_palette(base, as_cmap=True)
+        return cm.reversed() if rev else cm
+    return plt.get_cmap(name)
+
+
+def _num(v):
+    try:
+        return None if v in (None, "") else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _nums(text):
+    out = []
+    for part in str(text or "").replace(";", ",").split(","):
+        v = _num(part.strip())
+        if v is not None:
+            out.append(v)
+    return out
+
+
 def _fit_label(coef, order, r2, xname="x"):
     terms = []
     for p, a in zip(range(order, -1, -1), coef):
@@ -217,11 +284,462 @@ def _fit_label(coef, order, r2, xname="x"):
     return f"y = {eq}  (R² = {r2:.3f})"
 
 
-def _num(v):
-    try:
-        return None if v in (None, "") else float(v)
-    except (TypeError, ValueError):
+def _fmt_pm(v, e=None):
+    """Value ± error, rounded to 2 significant figures of the error."""
+    if e is None or not np.isfinite(e) or e <= 0:
+        return f"{v:.4g}"
+    d = max(0, 1 - int(np.floor(np.log10(e))))
+    return f"{v:.{d}f} ± {e:.{d}f}"
+
+
+def _ok(s):
+    """True for columns that exist and aren't 'none'."""
+    return bool(s) and s not in ("none", "")
+
+
+# ------------------------------------------------------- variable mapping
+class Mapping:
+    """Colour / size / shape mapped from data columns (seaborn-style hue, size, style)."""
+
+    def __init__(self, df, c):
+        self.c = c
+        self.hue = self.size = self.style = None
+        if _ok(c.get("hue")) and c["hue"] in df.columns:
+            self.hue = self._setup_hue(df[c["hue"]], c)
+        if _ok(c.get("sizeby")) and c["sizeby"] in df.columns:
+            self.size = self._setup_size(df[c["sizeby"]], c)
+        if _ok(c.get("styleby")) and c["styleby"] in df.columns:
+            v = df[c["styleby"]].astype(str).where(df[c["styleby"]].notna(), "–")
+            cats = list(dict.fromkeys(v))
+            self.style = {"col": c["styleby"], "values": v, "cats": cats,
+                          "markers": {k: MARKERS[i % len(MARKERS)] for i, k in enumerate(cats)}}
+
+    @property
+    def active(self):
+        return any((self.hue, self.size, self.style))
+
+    def _setup_hue(self, v, c):
+        continuous = pd.api.types.is_numeric_dtype(v) and not c.get("huecat")
+        if continuous:
+            vv = v.astype(float)
+            lo = _num(c.get("huemin"))
+            hi = _num(c.get("huemax"))
+            if c.get("huelog"):
+                pos = vv[vv > 0]
+                lo = lo if lo is not None else (pos.min() if len(pos) else 1)
+                hi = hi if hi is not None else (pos.max() if len(pos) else 10)
+                norm = matplotlib.colors.LogNorm(lo, hi)
+            else:
+                lo = lo if lo is not None else vv.min()
+                hi = hi if hi is not None else vv.max()
+                if lo == hi:
+                    hi = lo + 1
+                norm = matplotlib.colors.Normalize(lo, hi)
+            return {"col": c["hue"], "continuous": True, "values": vv, "norm": norm,
+                    "cmap": _cmap(c.get("cmap", "viridis"))}
+        sv = v.astype(str).where(v.notna(), "–")
+        cats = list(dict.fromkeys(sv))
+        cols = _colors(c.get("huepalette") or c.get("palette", "okabe-ito"), len(cats))
+        return {"col": c["hue"], "continuous": False, "values": sv, "cats": cats,
+                "colors": dict(zip(cats, cols))}
+
+    def _setup_size(self, v, c):
+        smin = _num(c.get("sizemin")) or 2.0
+        smax = _num(c.get("sizemax")) or 9.0
+        if pd.api.types.is_numeric_dtype(v):
+            vv = v.astype(float)
+            lo, hi = np.nanmin(vv), np.nanmax(vv)
+            return {"col": c["sizeby"], "continuous": True, "values": vv, "lo": lo, "hi": hi,
+                    "smin": smin, "smax": smax}
+        sv = v.astype(str)
+        cats = list(dict.fromkeys(sv))
+        sizes = np.linspace(smin, smax, max(len(cats), 2))[:len(cats)]
+        return {"col": c["sizeby"], "continuous": False, "values": sv, "cats": cats,
+                "sizes": dict(zip(cats, sizes))}
+
+    def colors_for(self, idx, default):
+        if not self.hue:
+            return [default] * len(idx)
+        h = self.hue
+        if h["continuous"]:
+            vals = h["values"].loc[idx].values
+            rgba = h["cmap"](h["norm"](vals))
+            rgba[~np.isfinite(vals)] = matplotlib.colors.to_rgba("0.75")
+            return list(rgba)
+        return [h["colors"][k] for k in h["values"].loc[idx]]
+
+    def sizes_for(self, idx, default):
+        if not self.size:
+            return np.full(len(idx), float(default))
+        s = self.size
+        if s["continuous"]:
+            vals = s["values"].loc[idx].values
+            span = (s["hi"] - s["lo"]) or 1.0
+            out = s["smin"] + (vals - s["lo"]) / span * (s["smax"] - s["smin"])
+            return np.where(np.isfinite(out), out, s["smin"])
+        return np.array([s["sizes"][k] for k in s["values"].loc[idx]])
+
+    def size_of_value(self, v):
+        s = self.size
+        span = (s["hi"] - s["lo"]) or 1.0
+        return s["smin"] + (v - s["lo"]) / span * (s["smax"] - s["smin"])
+
+    def legend_handles(self, base_ms, open_m):
+        """Extra legend entries for categorical hue, size and shape."""
+        H = []
+        title = lambda t: (Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False), t)
+        if self.hue and not self.hue["continuous"]:
+            H.append(title(self.hue["col"]))
+            for k in self.hue["cats"]:
+                col = self.hue["colors"][k]
+                H.append((Line2D([], [], linestyle="none", marker="o", markersize=base_ms,
+                                 markerfacecolor="white" if open_m else col, markeredgecolor=col), k))
+        if self.size:
+            s = self.size
+            H.append(title(s["col"]))
+            if s["continuous"]:
+                ticks = matplotlib.ticker.MaxNLocator(4).tick_values(s["lo"], s["hi"])
+                ticks = [t for t in ticks if s["lo"] <= t <= s["hi"]] or [s["lo"], s["hi"]]
+                for t in ticks:
+                    H.append((Line2D([], [], linestyle="none", marker="o", color="0.45",
+                                     markersize=self.size_of_value(t)), f"{t:g}"))
+            else:
+                for k in s["cats"]:
+                    H.append((Line2D([], [], linestyle="none", marker="o", color="0.45",
+                                     markersize=s["sizes"][k]), k))
+        if self.style:
+            H.append(title(self.style["col"]))
+            for k in self.style["cats"]:
+                H.append((Line2D([], [], linestyle="none", marker=self.style["markers"][k],
+                                 color="0.3", markerfacecolor="white" if open_m else "0.3",
+                                 markersize=base_ms), k))
+        return H
+
+    def colorbar(self, fig, ax):
+        if self.hue and self.hue["continuous"]:
+            sm = matplotlib.cm.ScalarMappable(norm=self.hue["norm"], cmap=self.hue["cmap"])
+            cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25)
+            cb.set_label(self.c.get("huelabel") or self.hue["col"])
+            if isinstance(self.hue["norm"], matplotlib.colors.LogNorm):
+                cb.ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(subs=(1, 2, 5)))
+                cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+                cb.ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+            cb.outline.set_linewidth(0.6)
+            return cb
         return None
+
+
+# ---------------------------------------------------------- reference lines
+def _stats(v, err=None):
+    """mean/SD, median/robust SD, weighted mean/SE/MSWD of a 1-D array."""
+    v = np.asarray(v, float)
+    out = {"n": len(v), "mean": v.mean(), "sd": v.std(ddof=1) if len(v) > 1 else np.nan,
+           "median": np.median(v),
+           "mad": 1.4826 * np.median(np.abs(v - np.median(v)))}
+    if err is not None:
+        e = np.asarray(err, float)
+        ok = np.isfinite(e) & (e > 0)
+        if ok.sum() >= 1:
+            w = 1 / e[ok] ** 2
+            wm = np.sum(w * v[ok]) / np.sum(w)
+            out["wmean"] = wm
+            out["wse"] = 1 / np.sqrt(np.sum(w))
+            out["mswd"] = (np.sum(((v[ok] - wm) / e[ok]) ** 2) / (ok.sum() - 1)) if ok.sum() > 1 else np.nan
+            out["wn"] = int(ok.sum())
+    return out
+
+
+def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
+    """Draw mean / median / weighted-mean lines (and ±kσ bands) for one set of values."""
+    k = int(c.get("refband") or 0)
+    kk = k or 1
+    st = _stats(vals, err)
+    line = ax.axhline if axis == "y" else ax.axvline
+    span = ax.axhspan if axis == "y" else ax.axvspan
+    sig = "σ" if kk == 1 else f"{kk}σ"
+    todo = []
+    if c.get("refmean"):
+        todo.append(("mean", st["mean"], st["sd"], f"mean = {_fmt_pm(st['mean'], kk * st['sd'])} ({kk} SD)"))
+    if c.get("refmedian"):
+        todo.append(("median", st["median"], st["mad"],
+                     f"median = {_fmt_pm(st['median'], kk * st['mad'])} ({kk} MAD)"))
+    if c.get("refwmean"):
+        if "wmean" in st:
+            todo.append(("wmean", st["wmean"], st["wse"],
+                         f"wtd mean = {_fmt_pm(st['wmean'], kk * st['wse'])} ({sig})\n"
+                         f"MSWD {st['mswd']:.2f}, n = {st['wn']}"))
+        else:
+            msgs.append(f"{prefix or 'Weighted mean'}: needs an error column")
+    for key, v, e, label in todo:
+        line(v, color=color, linestyle=REF_STYLES[key], linewidth=0.9, zorder=3,
+             label=(prefix + label) if c.get("reflegend", True) else None)
+        if k and np.isfinite(e) and e > 0:
+            span(v - k * e, v + k * e, color=color, alpha=0.12, linewidth=0, zorder=0.5)
+        msgs.append(prefix + label)
+
+
+def _custom_lines(ax, c, kind):
+    xl, yl = ax.get_xlim(), ax.get_ylim()
+    for v in _nums(c.get("hlines")):
+        ax.axhline(v, color="0.35", linewidth=0.8, linestyle="--", zorder=1)
+    if kind not in CATEGORICAL:
+        for v in _nums(c.get("vlines")):
+            ax.axvline(v, color="0.35", linewidth=0.8, linestyle="--", zorder=1)
+        if c.get("oneone"):
+            lo, hi = min(xl[0], yl[0], xl[1], yl[1]), max(xl[0], yl[0], xl[1], yl[1])
+            xx = np.geomspace(max(lo, 1e-300), hi, 200) if (ax.get_xscale() == "log") else np.linspace(lo, hi, 200)
+            ax.plot(xx, xx, color="0.35", linewidth=0.8, linestyle=":", zorder=1,
+                    label="1:1" if c.get("reflegend", True) else None)
+    ax.set_xlim(xl)
+    ax.set_ylim(yl)
+
+
+# ----------------------------------------------------------------- x–y
+def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
+    kind = c.get("kind", "scatter")
+    excluded = set(int(r) for r in c.get("excluded", []))
+    open_m = c.get("markerfill", "filled") == "open"
+    vary_m = c.get("varymarkers", True)
+    ms = c.get("markersize", 4)
+    alpha = _num(c.get("alpha")) or 1.0
+    mapping = Mapping(df, c) if kind in ("scatter", "linemarkers") else None
+    mapped = mapping is not None and mapping.active
+    if not mapped and any(_ok(c.get(k)) for k in ("hue", "sizeby", "styleby")) and kind in ("line", "step"):
+        msgs.append("Colour/size/shape mapping applies to scatter and line + marker plots")
+
+    for i, s in enumerate(series):
+        y = pd.to_numeric(df[s["y"]], errors="coerce")
+        if xcol:
+            x = df[xcol]
+            x_numeric = pd.api.types.is_numeric_dtype(x)
+        else:
+            x, x_numeric = pd.Series(np.arange(1, len(df) + 1), index=df.index), True
+        yerr = pd.to_numeric(df[s["yerr"]], errors="coerce") if s.get("yerr") in df.columns else None
+        xerr = pd.to_numeric(df[s["xerr"]], errors="coerce") if s.get("xerr") in df.columns else None
+        valid = y.notna() & (x.notna() if x_numeric else True)
+        excl = valid & df.index.isin(excluded)
+        mask = valid & ~excl
+        col = colors[i]
+        lbl = s.get("label") or s["y"]
+        mk = s.get("marker") if s.get("marker") not in (None, "", "auto") else \
+            (MARKERS[i % len(MARKERS)] if vary_m else "o")
+        ls = LINESTYLES.get(s.get("ls") or "-", "-")
+
+        if excl.any() and x_numeric and c.get("showexcluded", True):
+            ax.plot(x[excl], y[excl], linestyle="none", marker="x", color="0.6",
+                    markersize=ms, markeredgewidth=0.8, zorder=1)
+        if x_numeric:
+            points.append({"label": lbl, "color": col,
+                           "pts": [[int(r), float(x[r]), float(y[r]), bool(excl[r])]
+                                   for r in df.index[valid]]})
+
+        x, y = x[mask], y[mask]
+        yerr = yerr[mask].fillna(0) if yerr is not None else None
+        xerr = xerr[mask].fillna(0) if xerr is not None else None
+        if kind in ("line", "step", "linemarkers") and x_numeric and c.get("sortx", True):
+            order = np.argsort(x.values, kind="stable")
+            x, y = x.iloc[order], y.iloc[order]
+            yerr = yerr.iloc[order] if yerr is not None else None
+            xerr = xerr.iloc[order] if xerr is not None else None
+
+        if mapped:
+            neutral = "0.55" if mapping.hue else col
+            if yerr is not None or xerr is not None:
+                ax.errorbar(x, y, yerr=yerr, xerr=xerr, fmt="none", ecolor=neutral,
+                            elinewidth=0.7, alpha=alpha, zorder=1.5)
+            if kind == "linemarkers":
+                ax.plot(x, y, color=neutral, linestyle=ls, zorder=1.6, alpha=alpha)
+            fc = mapping.colors_for(x.index, col)
+            sz = mapping.sizes_for(x.index, ms)
+            groups = ([(m, (mapping.style["values"].loc[x.index] == k).values)
+                       for k, m in mapping.style["markers"].items()]
+                      if mapping.style else [(mk, np.ones(len(x), bool))])
+            for m, g in groups:
+                if not g.any():
+                    continue
+                gfc = [fc[j] for j in np.flatnonzero(g)]
+                if open_m:
+                    ax.scatter(x[g], y[g], s=sz[g] ** 2, marker=m, facecolors="white",
+                               edgecolors=gfc, linewidths=0.9, alpha=alpha, zorder=2)
+                else:
+                    ax.scatter(x[g], y[g], s=sz[g] ** 2, marker=m, c=gfc,
+                               edgecolors=c.get("edgecolor", "black") if c.get("edgecolor", "black") != "none" else "face",
+                               linewidths=0.4, alpha=alpha, zorder=2)
+            # series key (shape + series colour, or grey when colour is mapped)
+            hcol = "0.3" if mapping.hue else col
+            ax.plot([], [], linestyle="-" if kind == "linemarkers" else "none",
+                    marker=None if mapping.style else mk, color=hcol,
+                    markerfacecolor="white" if open_m else hcol, markersize=ms, label=lbl)
+        else:
+            mstyle = dict(marker=mk, markeredgecolor=col,
+                          markerfacecolor="white" if open_m else col, markeredgewidth=0.8)
+            if kind == "scatter":
+                fmt = dict(linestyle="none", **mstyle)
+            elif kind == "linemarkers":
+                fmt = dict(linestyle=ls, **mstyle)
+            elif kind == "step":
+                fmt = dict(linestyle=ls, drawstyle="steps-mid", marker="none")
+            else:
+                fmt = dict(linestyle=ls, marker="none")
+            if yerr is not None or xerr is not None:
+                ax.errorbar(x, y, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha,
+                            elinewidth=0.7, label=lbl, zorder=2, **fmt)
+            else:
+                ax.plot(x, y, color=col, label=lbl, zorder=2, alpha=alpha, **fmt)
+
+        # polynomial fit (+ optional seaborn confidence band)
+        fit = int(s.get("fit") or 0)
+        if fit and x_numeric and len(x) > fit:
+            xv, yv = x.values.astype(float), y.values.astype(float)
+            w = None
+            if yerr is not None and c.get("weightedfit", False) and (yerr > 0).all():
+                w = 1.0 / yerr.values.astype(float)
+            coef = np.polyfit(xv, yv, fit, w=w)
+            pred = np.polyval(coef, xv)
+            ss_res = np.sum((yv - pred) ** 2)
+            ss_tot = np.sum((yv - yv.mean()) ** 2)
+            r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+            xx = np.linspace(xv.min(), xv.max(), 200)
+            ci = int(c.get("ci") or 0)
+            if ci and sns is not None:
+                sns.regplot(x=xv, y=yv, order=fit, ci=ci, scatter=False, ax=ax,
+                            color=col, truncate=True, seed=0, n_boot=500,
+                            line_kws={"linewidth": 0, "zorder": 1})
+                if w is not None:
+                    msgs.append(f"{lbl}: confidence band is unweighted (bootstrap)")
+            ax.plot(xx, np.polyval(coef, xx), color=col, linestyle="--",
+                    linewidth=0.9, marker="none", zorder=3,
+                    label=_fit_label(coef, fit, r2) if c.get("fitlegend", True) else None)
+            msgs.append(f"{lbl}: " + _fit_label(coef, fit, r2)
+                        + (f"  [{int(excl.sum())} point(s) excluded]" if excl.any() else ""))
+        elif fit and not x_numeric:
+            msgs.append(f"{lbl}: fit skipped (X column is not numeric)")
+
+        # mean / median / weighted-mean reference lines
+        if any(c.get(k) for k in ("refmean", "refmedian", "refwmean")) and len(y):
+            prefix = f"{lbl}: " if len(series) > 1 else ""
+            axis = c.get("refaxis", "y")
+            if axis in ("y", "both"):
+                _ref_lines(ax, y.values, yerr.values if yerr is not None else None,
+                           c, col, prefix + ("Y " if axis == "both" else ""), "y", msgs)
+            if axis in ("x", "both") and x_numeric and (axis == "x" or i == 0 or xcol is None):
+                _ref_lines(ax, x.values.astype(float), xerr.values if xerr is not None else None,
+                           c if (xerr is not None or axis == "x") else {**c, "refwmean": False},
+                           col if axis == "x" else "0.35",
+                           (prefix if axis == "x" else "") + ("X " if axis == "both" else ""), "x", msgs)
+
+    if mapped:
+        mapping.colorbar(fig, ax)
+        extra.extend(mapping.legend_handles(ms, open_m))
+
+
+# ----------------------------------------------------------------- histogram
+def _hist_edges(vals, c):
+    allv = np.concatenate([v for v in vals if len(v)]) if any(len(v) for v in vals) else np.array([0.0, 1.0])
+    lo = _num(c.get("binmin"))
+    hi = _num(c.get("binmax"))
+    lo = np.nanmin(allv) if lo is None else lo
+    hi = np.nanmax(allv) if hi is None else hi
+    if hi <= lo:
+        hi = lo + 1
+    mode = c.get("binmode", "auto")
+    if mode == "width" and (_num(c.get("binwidth")) or 0) > 0:
+        w = _num(c["binwidth"])
+        start = lo if _num(c.get("binmin")) is not None else np.floor(lo / w) * w
+        edges = np.arange(start, hi + w * 1.0001, w)
+        if len(edges) > 2000:
+            raise ValueError("Bin width is too small for this data range (over 2000 bins).")
+        return edges
+    if mode == "count" and str(c.get("bins", "")).strip().isdigit():
+        return np.linspace(lo, hi, int(c["bins"]) + 1)
+    return np.histogram_bin_edges(allv[(allv >= lo) & (allv <= hi)], bins="auto", range=(lo, hi))
+
+
+def _kde_curve(v, edges, bw_adjust, scale):
+    v = np.asarray(v, float)
+    if len(v) < 2 or np.std(v) == 0:
+        return None, None
+    bw = 1.06 * np.std(v, ddof=1) * len(v) ** (-1 / 5) * bw_adjust
+    xs = np.linspace(edges[0], edges[-1], 300)
+    dens = np.exp(-0.5 * ((xs[:, None] - v[None, :]) / bw) ** 2).sum(axis=1) / (len(v) * bw * np.sqrt(2 * np.pi))
+    return xs, dens * scale
+
+
+def _hist(ax, fig, df, c, series, colors, msgs):
+    keep = ~df.index.isin([int(r) for r in c.get("excluded", [])])
+    vals = [pd.to_numeric(df.loc[keep, s["y"]], errors="coerce").dropna() for s in series]
+    edges = _hist_edges([v.values for v in vals], c)
+    widths = np.diff(edges)
+    density = c.get("density", False)
+    colorby = c.get("histcolor") if _ok(c.get("histcolor")) and c.get("histcolor") in df.columns else None
+    if colorby and len(series) > 1:
+        msgs.append("Colouring bins by a variable uses the first series only")
+    ec = c.get("binedge", "black")
+    ec = None if ec == "none" else ec
+    for i, (s, v) in enumerate(zip(series, vals)):
+        lbl = s.get("label") or s["y"]
+        col = colors[i]
+        counts, _ = np.histogram(v.values, edges)
+        h = counts / (counts.sum() * widths) if density and counts.sum() else counts.astype(float)
+        if colorby and i == 0:
+            cv = pd.to_numeric(df.loc[v.index, colorby], errors="coerce").values
+            which = np.clip(np.searchsorted(edges, v.values, side="right") - 1, 0, len(widths) - 1)
+            fn = {"mean": np.nanmean, "median": np.nanmedian, "min": np.nanmin,
+                  "max": np.nanmax, "std": np.nanstd}[c.get("histstat", "mean")]
+            stat = np.full(len(widths), np.nan)
+            for b in range(len(widths)):
+                sel = cv[which == b]
+                sel = sel[np.isfinite(sel)]
+                if len(sel):
+                    stat[b] = fn(sel)
+            ok = np.isfinite(stat)
+            lo, hi = _num(c.get("huemin")), _num(c.get("huemax"))
+            lo = np.nanmin(stat) if lo is None and ok.any() else (lo if lo is not None else 0)
+            hi = np.nanmax(stat) if hi is None and ok.any() else (hi if hi is not None else 1)
+            norm = matplotlib.colors.Normalize(lo, hi if hi > lo else lo + 1)
+            cmap = _cmap(c.get("cmap", "viridis"))
+            fc = [cmap(norm(sv)) if np.isfinite(sv) else "0.85" for sv in stat]
+            ax.bar(edges[:-1], h, width=widths, align="edge", color=fc, edgecolor=ec,
+                   linewidth=0.5, label=lbl, zorder=2)
+            sm = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+            cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25)
+            cb.set_label(c.get("huelabel") or f"{c.get('histstat', 'mean')} {colorby}")
+            cb.outline.set_linewidth(0.6)
+        elif len(series) == 1 or c.get("histmulti", "step") == "overlay":
+            ax.bar(edges[:-1], h, width=widths, align="edge", color=col, edgecolor=ec,
+                   linewidth=0.5, alpha=1 if len(series) == 1 else 0.5, label=lbl, zorder=2)
+        else:
+            ax.stairs(h, edges, color=col, linewidth=c.get("linewidth", 1.2), label=lbl, zorder=2)
+        if c.get("histkde"):
+            scale = 1.0 if density else counts.sum() * widths.mean()
+            xs, ys = _kde_curve(v.values, edges, _num(c.get("bw")) or 1, scale)
+            if xs is not None:
+                ax.plot(xs, ys, color=col if not colorby else "black",
+                        linewidth=c.get("linewidth", 1.2), zorder=3)
+        if any(c.get(k) for k in ("refmean", "refmedian")) and len(v):
+            prefix = f"{lbl}: " if len(series) > 1 else ""
+            _ref_lines(ax, v.values, None, {**c, "refwmean": False},
+                       "black" if colorby else (col if (len(series) > 1 or col != "#000000") else "#c8372d"),
+                       prefix, "x", msgs)
+    msgs.append(f"{len(widths)} bins, width {widths.mean():.4g}" +
+                ("" if np.allclose(widths, widths[0]) else " (mean)"))
+
+
+# ----------------------------------------------------------------- bar
+def _bar(ax, df, c, series, colors, xcol):
+    xs = df[xcol] if xcol else pd.Series(np.arange(1, len(df) + 1))
+    pos = np.arange(len(df))
+    n = len(series)
+    w = 0.8 / n
+    for i, s in enumerate(series):
+        err = df[s["yerr"]] if s.get("yerr") in df.columns else None
+        ax.bar(pos + (i - (n - 1) / 2) * w, df[s["y"]], width=w, yerr=err,
+               color=colors[i], edgecolor="black", linewidth=0.6, alpha=_num(c.get("alpha")) or 1,
+               label=s.get("label") or s["y"], error_kw={"elinewidth": 0.8})
+    ax.set_xticks(pos)
+    ax.set_xticklabels([_fmt_cell(v) for v in xs], rotation=c.get("xrot", 0) or 0,
+                       ha="right" if c.get("xrot") else "center")
+    ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
 
 
 def _distribution(ax, df, c, series, colors, xcol, msgs):
@@ -288,7 +806,7 @@ def make_figure(c, df=None):
     df = DATA["df"] if df is None else df
     if df is None:
         raise ValueError("No data loaded.")
-    msgs, points = [], []
+    msgs, points, extra = [], [], []
     series = [s for s in c.get("series", []) if s.get("y") in df.columns]
     kind = c.get("kind", "scatter")
     size = FIG_SIZES.get(c.get("size", "single"), None)
@@ -302,144 +820,31 @@ def make_figure(c, df=None):
                     transform=ax.transAxes, color="0.5")
             return fig, msgs, points
 
-        colors = _colors(c.get("palette", "okabe-ito"), len(series))
+        pal = _colors(c.get("palette", "okabe-ito"), len(series))
+        colors = [s.get("color") or pal[i] for i, s in enumerate(series)]
         xcol = c.get("x") if c.get("x") in df.columns else None
-        open_m = c.get("markerfill", "filled") == "open"
-        vary_m = c.get("varymarkers", True)
 
         if kind == "bar":
-            xs = df[xcol] if xcol else pd.Series(np.arange(1, len(df) + 1))
-            pos = np.arange(len(df))
-            n = len(series)
-            w = 0.8 / n
-            for i, s in enumerate(series):
-                err = df[s["yerr"]] if s.get("yerr") in df.columns else None
-                ax.bar(pos + (i - (n - 1) / 2) * w, df[s["y"]], width=w, yerr=err,
-                       color=colors[i], edgecolor="black", linewidth=0.6,
-                       label=s.get("label") or s["y"], error_kw={"elinewidth": 0.8})
-            ax.set_xticks(pos)
-            ax.set_xticklabels([_fmt_cell(v) for v in xs],
-                               rotation=c.get("xrot", 0) or 0,
-                               ha="right" if c.get("xrot") else "center")
-            ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
-            ax.tick_params(axis="x", which="both", top=False)
-        elif kind == "hist" and c.get("histkde") and sns is not None:
-            bins = int(c["bins"]) if str(c.get("bins", "")).isdigit() else "auto"
-            stat = "density" if c.get("density") else "count"
-            for i, s in enumerate(series):
-                y = pd.to_numeric(df[s["y"]], errors="coerce")
-                y = y[~df.index.isin([int(r) for r in c.get("excluded", [])])].dropna()
-                sns.histplot(x=y, bins=bins, stat=stat, kde=True, ax=ax, color=colors[i],
-                             element="step" if len(series) > 1 else "bars",
-                             fill=len(series) == 1, edgecolor="black" if len(series) == 1 else None,
-                             linewidth=0.6, alpha=0.6 if len(series) == 1 else 1,
-                             label=s.get("label") or s["y"], line_kws={"linewidth": 1.2})
+            _bar(ax, df, c, series, colors, xcol)
         elif kind == "hist":
-            bins = int(c["bins"]) if str(c.get("bins", "")).isdigit() else "auto"
-            for i, s in enumerate(series):
-                y = pd.to_numeric(df[s["y"]], errors="coerce")
-                y = y[~df.index.isin([int(r) for r in c.get("excluded", [])])].dropna()
-                lbl = s.get("label") or s["y"]
-                if len(series) == 1:
-                    ax.hist(y, bins=bins, color=colors[i], edgecolor="black",
-                            linewidth=0.6, label=lbl, density=c.get("density", False))
-                else:
-                    ax.hist(y, bins=bins, histtype="step", color=colors[i], linewidth=1.2,
-                            label=lbl, density=c.get("density", False))
+            _hist(ax, fig, df, c, series, colors, msgs)
         elif kind in ("kde", "box", "violin", "strip", "swarm"):
             _distribution(ax, df, c, series, colors, xcol, msgs)
         else:
-            excluded = set(int(r) for r in c.get("excluded", []))
-            for i, s in enumerate(series):
-                y = pd.to_numeric(df[s["y"]], errors="coerce")
-                if xcol:
-                    x = df[xcol]
-                    x_numeric = pd.api.types.is_numeric_dtype(x)
-                else:
-                    x, x_numeric = pd.Series(np.arange(1, len(df) + 1)), True
-                yerr = pd.to_numeric(df[s["yerr"]], errors="coerce") if s.get("yerr") in df.columns else None
-                xerr = pd.to_numeric(df[s["xerr"]], errors="coerce") if s.get("xerr") in df.columns else None
-                valid = y.notna() & (x.notna() if x_numeric else True)
-                excl = valid & df.index.isin(excluded)
-                mask = valid & ~excl
-                col = colors[i]
-                lbl = s.get("label") or s["y"]
+            _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra)
 
-                if excl.any() and x_numeric and c.get("showexcluded", True):
-                    ax.plot(x[excl], y[excl], linestyle="none", marker="x", color="0.6",
-                            markersize=c.get("markersize", 4), markeredgewidth=0.8, zorder=1)
-                if x_numeric:
-                    points.append({"label": lbl, "color": col,
-                                   "pts": [[int(r), float(x[r]), float(y[r]), bool(excl[r])]
-                                           for r in df.index[valid]]})
-
-                x, y = x[mask], y[mask]
-                yerr = yerr[mask].fillna(0) if yerr is not None else None
-                xerr = xerr[mask].fillna(0) if xerr is not None else None
-                if kind in ("line", "step", "linemarkers") and x_numeric and c.get("sortx", True):
-                    order = np.argsort(x.values, kind="stable")
-                    x, y = x.iloc[order], y.iloc[order]
-                    yerr = yerr.iloc[order] if yerr is not None else None
-                    xerr = xerr.iloc[order] if xerr is not None else None
-
-                mk = MARKERS[i % len(MARKERS)] if vary_m else "o"
-                mstyle = dict(marker=mk, markeredgecolor=col,
-                              markerfacecolor="white" if open_m else col,
-                              markeredgewidth=0.8)
-                if kind == "scatter":
-                    fmt = dict(linestyle="none", **mstyle)
-                elif kind == "linemarkers":
-                    fmt = dict(linestyle="-", **mstyle)
-                elif kind == "step":
-                    fmt = dict(linestyle="-", drawstyle="steps-mid", marker="none")
-                else:
-                    fmt = dict(linestyle="-", marker="none")
-                if yerr is not None or xerr is not None:
-                    ax.errorbar(x, y, yerr=yerr, xerr=xerr, color=col, ecolor=col,
-                                elinewidth=0.7, label=lbl, zorder=2, **fmt)
-                else:
-                    ax.plot(x, y, color=col, label=lbl, zorder=2, **fmt)
-
-                fit = int(s.get("fit") or 0)
-                if fit and x_numeric and len(x) > fit:
-                    xv, yv = x.values.astype(float), y.values.astype(float)
-                    w = None
-                    if yerr is not None and c.get("weightedfit", False) and (yerr > 0).all():
-                        w = 1.0 / yerr.values.astype(float)
-                    coef = np.polyfit(xv, yv, fit, w=w)
-                    pred = np.polyval(coef, xv)
-                    ss_res = np.sum((yv - pred) ** 2)
-                    ss_tot = np.sum((yv - yv.mean()) ** 2)
-                    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
-                    xx = np.linspace(xv.min(), xv.max(), 200)
-                    ci = int(c.get("ci") or 0)
-                    if ci and sns is not None:
-                        sns.regplot(x=xv, y=yv, order=fit, ci=ci, scatter=False, ax=ax,
-                                    color=col, truncate=True, seed=0, n_boot=500,
-                                    line_kws={"linewidth": 0, "zorder": 1})
-                        if w is not None:
-                            msgs.append(f"{lbl}: confidence band is unweighted (bootstrap)")
-                    ax.plot(xx, np.polyval(coef, xx), color=col, linestyle="--",
-                            linewidth=0.9, marker="none", zorder=3,
-                            label=_fit_label(coef, fit, r2) if c.get("fitlegend", True) else None)
-                    msgs.append(f"{lbl}: " + _fit_label(coef, fit, r2)
-                                + (f"  [{int(excl.sum())} point(s) excluded]" if excl.any() else ""))
-                elif fit and not x_numeric:
-                    msgs.append(f"{lbl}: fit skipped (X column is not numeric)")
-
-        # ---- axes
-        xl = c.get("xlabel")
-        yl = c.get("ylabel")
+        # ---- labels
+        xl, yl = c.get("xlabel"), c.get("ylabel")
         dist_grouped = kind in ("box", "violin", "strip", "swarm") and xcol \
             and not pd.api.types.is_numeric_dtype(df[xcol]) and len(series) == 1
-        if xl is None or xl == "":
+        if not xl:
             if kind in ("hist", "kde"):
                 xl = series[0]["y"] if len(series) == 1 else ""
             elif kind in ("box", "violin", "strip", "swarm"):
                 xl = xcol if dist_grouped else ""
             else:
                 xl = xcol or "Index"
-        if yl is None or yl == "":
+        if not yl:
             if kind == "hist":
                 yl = "Density" if c.get("density") else "Count"
             elif kind == "kde":
@@ -450,6 +855,8 @@ def make_figure(c, df=None):
         ax.set_ylabel(yl)
         if c.get("title"):
             ax.set_title(c["title"])
+
+        # ---- scales and limits
         if c.get("xlog") and kind not in CATEGORICAL:
             ax.set_xscale("log")
         if c.get("ylog"):
@@ -460,6 +867,7 @@ def make_figure(c, df=None):
         lo, hi = _num(c.get("ymin")), _num(c.get("ymax"))
         if lo is not None or hi is not None:
             ax.set_ylim(bottom=lo, top=hi)
+        _custom_lines(ax, c, kind)
         if c.get("xinvert"):
             ax.invert_xaxis()
         if c.get("yinvert"):
@@ -476,18 +884,27 @@ def make_figure(c, df=None):
                 ax.grid(True, which="minor", color="0.93", linewidth=0.4, zorder=0)
             ax.set_axisbelow(True)
 
+        # ---- legend
         leg = c.get("legend", "best")
-        if leg != "off" and (len(series) > 1 or any(int(s.get("fit") or 0) for s in series)
-                             or c.get("legendsingle", False)):
-            h, l = ax.get_legend_handles_labels()
-            names = [s.get("label") or s["y"] for s in series]
-            order = sorted(range(len(l)), key=lambda k: (l[k].startswith("y = "),
-                                                        names.index(l[k]) if l[k] in names else k))
-            h, l = [h[k] for k in order], [l[k] for k in order]
-            if h and leg == "outside":
-                fig.legend(h, l, loc="outside right upper")
-            elif h:
-                ax.legend(h, l, loc=leg)
+        h, l = ax.get_legend_handles_labels()
+        names = [s.get("label") or s["y"] for s in series]
+        order = sorted(range(len(l)), key=lambda k: (l[k] not in names,
+                                                    l[k].startswith("y = "),
+                                                    names.index(l[k]) if l[k] in names else k))
+        h, l = [h[k] for k in order], [l[k] for k in order]
+        if len(series) == 1 and not c.get("legendsingle") and l and l[0] == names[0]:
+            h, l = h[1:], l[1:]      # a lone series doesn't need its own entry
+        h += [e[0] for e in extra]
+        l += [e[1] for e in extra]
+        if leg != "off" and h:
+            if leg == "outside":
+                L = fig.legend(h, l, loc="outside right upper")
+            else:
+                L = ax.legend(h, l, loc=leg)
+                L.set_in_layout(False)
+            for txt, lab in zip(L.get_texts(), l):
+                if any(lab == e[1] and isinstance(e[0], Rectangle) for e in extra):
+                    txt.set_fontweight("bold")
 
         if kind in CATEGORICAL:
             ax.tick_params(axis="x", which="both", top=False, bottom=kind == "bar")
@@ -516,7 +933,7 @@ def _geometry(fig, ax):
 
 
 def render(cfg_json, fmt="png", dpi=200):
-    """Render the figure; returns JSON {data (base64), msgs, geom, points}."""
+    """Render the figure; returns JSON {data (base64), msgs, geom, points, colors, swatches}."""
     c = json.loads(cfg_json)
     fig, msgs, points = make_figure(c)
     buf = io.BytesIO()
@@ -524,9 +941,10 @@ def render(cfg_json, fmt="png", dpi=200):
         geom = _geometry(fig, fig.axes[0]) if fmt == "png" else None
         fig.savefig(buf, format=fmt, dpi=dpi)
     plt.close(fig)
+    pal = _colors(c.get("palette", "okabe-ito"), len(c.get("series", [])))
     return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
                        "geom": geom, "points": points,
-                       "colors": _colors(c.get("palette", "okabe-ito"), len(c.get("series", []))),
+                       "colors": [s.get("color") or pal[i] for i, s in enumerate(c.get("series", []))],
                        "swatches": _colors(c.get("palette", "okabe-ito"), 8)})
 
 
@@ -534,13 +952,14 @@ def render(cfg_json, fmt="png", dpi=200):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 3:
-        print("usage: python plotter.py DATAFILE CONFIG.json [out.pdf]")
+        print("usage: python plotter.py DATAFILE SETTINGS.json [out.pdf]")
         sys.exit(1)
     data_file, cfg_file = sys.argv[1], sys.argv[2]
     out = sys.argv[3] if len(sys.argv) > 3 else "figure.pdf"
     with open(cfg_file) as f:
         cfg = json.load(f)
-    load_file(data_file, data_file, cfg.get("header", "auto"), cfg.get("sheet"))
+    load_file(data_file, data_file, cfg.get("header", "auto"), cfg.get("sheet"),
+              cfg.get("headerrow", 1), cfg.get("skipafter", 0))
     fig, msgs, _ = make_figure(cfg)
     with plt.rc_context(_style(cfg)):
         fig.savefig(out, dpi=cfg.get("dpi", 600))
