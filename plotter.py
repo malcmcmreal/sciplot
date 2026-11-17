@@ -896,6 +896,8 @@ def make_figure(c, df=None):
             h, l = h[1:], l[1:]      # a lone series doesn't need its own entry
         h += [e[0] for e in extra]
         l += [e[1] for e in extra]
+        if leg == "best" and extra:
+            leg = "outside"          # size/shape/category keys are too big to sit on the data
         if leg != "off" and h:
             if leg == "outside":
                 L = fig.legend(h, l, loc="outside right upper")
