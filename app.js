@@ -521,7 +521,7 @@ function drawOverlay(mouse) {
   if (!last?.geom) return;
   const g = last.geom;
   if (mouse && inAxes(mouse[0], mouse[1]) && !drag) {
-    ctx.strokeStyle = 'rgba(47,111,176,0.35)';
+    ctx.strokeStyle = 'rgba(190,81,3,0.45)';
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -537,8 +537,8 @@ function drawOverlay(mouse) {
   }
   if (drag?.moved) {
     const x0 = CATEGORICAL.has(last.kind) ? g.x0 * w : drag.x0, x1 = CATEGORICAL.has(last.kind) ? g.x1 * w : drag.x1;
-    ctx.fillStyle = 'rgba(47,111,176,0.12)';
-    ctx.strokeStyle = 'rgba(47,111,176,0.8)';
+    ctx.fillStyle = 'rgba(190,81,3,0.12)';
+    ctx.strokeStyle = 'rgba(190,81,3,0.85)';
     ctx.lineWidth = 1;
     ctx.fillRect(x0, drag.y0, x1 - x0, drag.y1 - drag.y0);
     ctx.strokeRect(x0, drag.y0, x1 - x0, drag.y1 - drag.y0);
