@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 1;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 2;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -38,7 +38,8 @@ async function boot() {
     py = await loadPyodide();
     status('Loading numpy, pandas, matplotlib…');
     await py.loadPackage(['numpy', 'pandas', 'matplotlib', 'micropip']);
-    await py.pyimport('micropip').install(['openpyxl']);
+    status('Installing seaborn…');
+    await py.pyimport('micropip').install(['openpyxl', 'seaborn']);
     PYSRC = await (await fetch(`plotter.py?v=${PY_VERSION}`)).text();
     py.FS.mkdirTree('/home/pyodide/app');
     py.FS.writeFile('/home/pyodide/app/plotter.py', PYSRC);
@@ -174,15 +175,28 @@ function getSeries() {
   }));
 }
 
+const DIST = new Set(['hist', 'kde', 'box', 'violin', 'strip', 'swarm']);
+const GROUPED = new Set(['box', 'violin', 'strip', 'swarm']);
+const CATEGORICAL = new Set(['bar', ...GROUPED]);
+
 function updateVisibility() {
   const k = $('kind').value;
-  const hist = k === 'hist', bar = k === 'bar';
+  const hist = k === 'hist', bar = k === 'bar', dist = DIST.has(k), grouped = GROUPED.has(k);
   $('binsRow').hidden = !hist;
   $('densRow').hidden = !hist;
-  $('xRow').hidden = hist;
+  $('histkdeRow').hidden = !hist;
+  $('kdeRows').hidden = k !== 'kde';
+  $('violinRow').hidden = k !== 'violin';
+  $('distpointsRow').hidden = !(k === 'box' || k === 'violin');
+  $('xRow').hidden = hist || k === 'kde';
+  $('groupHint').hidden = !grouped;
+  $('xLabel').textContent = grouped ? 'Group by' : 'X column';
+  const blank = $('x').querySelector('option[value=""]');
+  if (blank) blank.textContent = grouped ? '(series)' : '(row number)';
+  $('ticksRow').hidden = $('theme').value !== 'publication';
   $('customSize').hidden = $('size').value !== 'custom';
-  document.querySelectorAll('.series .s-err').forEach((el, i) => { el.hidden = hist || (bar && i % 2 === 1); });
-  document.querySelectorAll('.series .s-fitrow').forEach((el) => { el.hidden = hist || bar; });
+  document.querySelectorAll('.series .s-err').forEach((el, i) => { el.hidden = dist || (bar && i % 2 === 1); });
+  document.querySelectorAll('.series .s-fitrow').forEach((el) => { el.hidden = dist || bar; });
 }
 
 // ---------------------------------------------------------------- config
@@ -295,6 +309,7 @@ function renderPreview() {
     $('placeholder').hidden = true;
     $('msgs').textContent = r.msgs.join('\n');
     document.querySelectorAll('.series').forEach((d, i) => d.style.setProperty('--sc', r.colors[i] || '#2f6fb0'));
+    $('swatches').innerHTML = r.swatches.map((h) => `<span style="background:${h}" title="${h}"></span>`).join('');
     document.querySelectorAll('[data-exp], #dlScript').forEach((b) => { b.disabled = false; });
     $('resetZoom').disabled = !['xmin', 'xmax', 'ymin', 'ymax'].some((id) => $(id).value !== '');
     $('clearExcl').hidden = excluded.size === 0;
@@ -416,7 +431,7 @@ function drawOverlay(mouse) {
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(g.x0 * w, mouse[1]); ctx.lineTo(g.x1 * w, mouse[1]);
-    if (last.kind !== 'bar') { ctx.moveTo(mouse[0], g.y0 * h); ctx.lineTo(mouse[0], g.y1 * h); }
+    if (!CATEGORICAL.has(last.kind)) { ctx.moveTo(mouse[0], g.y0 * h); ctx.lineTo(mouse[0], g.y1 * h); }
     ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -426,7 +441,7 @@ function drawOverlay(mouse) {
     ctx.beginPath(); ctx.arc(hover.qx, hover.qy, 7, 0, 2 * Math.PI); ctx.stroke();
   }
   if (drag?.moved) {
-    const x0 = last.kind === 'bar' ? g.x0 * w : drag.x0, x1 = last.kind === 'bar' ? g.x1 * w : drag.x1;
+    const x0 = CATEGORICAL.has(last.kind) ? g.x0 * w : drag.x0, x1 = CATEGORICAL.has(last.kind) ? g.x1 * w : drag.x1;
     ctx.fillStyle = 'rgba(47,111,176,0.12)';
     ctx.strokeStyle = 'rgba(47,111,176,0.8)';
     ctx.lineWidth = 1;
@@ -453,7 +468,7 @@ canvas.addEventListener('mousemove', (e) => {
   const tip = $('tip');
   if (inAxes(mx, my)) {
     const [dx, dy] = pxToData(mx, my);
-    $('readout').textContent = last.kind === 'bar' ? `y = ${fmt(dy)}` : `x = ${fmt(dx)}   y = ${fmt(dy)}`;
+    $('readout').textContent = CATEGORICAL.has(last.kind) ? `y = ${fmt(dy)}` : `x = ${fmt(dx)}   y = ${fmt(dy)}`;
   } else $('readout').textContent = '';
   if (hover) {
     const rl = info.rowlabels ? `<b>${esc(info.rowlabels.values[hover.row])}</b> · ` : '';
@@ -496,7 +511,7 @@ function zoomTo(d) {
   const [ax, ay] = pxToData(d.x0, d.y0);
   const [bx, by] = pxToData(d.x1, d.y1);
   const r4 = (v) => String(+v.toPrecision(4));
-  if (last.kind !== 'bar') {
+  if (!CATEGORICAL.has(last.kind)) {
     $('xmin').value = r4(Math.min(ax, bx)); $('xmax').value = r4(Math.max(ax, bx));
   }
   $('ymin').value = r4(Math.min(ay, by)); $('ymax').value = r4(Math.max(ay, by));

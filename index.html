@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=2">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
   <header class="top">
     <div>
       <h1>SciPlot</h1>
-      <p class="tag">Publication-ready plots from CSV, TXT or Excel files, made with matplotlib in your browser. Your data never leaves your computer.</p>
+      <p class="tag">Publication-ready plots from CSV, TXT or Excel files, made with matplotlib and seaborn in your browser. Your data never leaves your computer.</p>
     </div>
     <div class="status" id="status" aria-live="polite">Starting Python…</div>
   </header>
@@ -50,18 +50,37 @@
         <h2>Plot</h2>
         <div class="row"><label for="kind">Type</label>
           <select id="kind" data-cfg>
-            <option value="scatter">Scatter</option>
-            <option value="linemarkers">Line + markers</option>
-            <option value="line">Line</option>
-            <option value="step">Step</option>
-            <option value="bar">Bar (grouped)</option>
-            <option value="hist">Histogram</option>
+            <optgroup label="X–Y">
+              <option value="scatter">Scatter</option>
+              <option value="linemarkers">Line + markers</option>
+              <option value="line">Line</option>
+              <option value="step">Step</option>
+              <option value="bar">Bar (grouped)</option>
+            </optgroup>
+            <optgroup label="Distributions (seaborn)">
+              <option value="hist">Histogram</option>
+              <option value="kde">KDE (density)</option>
+              <option value="box">Box plot</option>
+              <option value="violin">Violin plot</option>
+              <option value="strip">Strip plot</option>
+              <option value="swarm">Swarm plot</option>
+            </optgroup>
           </select></div>
-        <div class="row" id="xRow"><label for="x">X column</label><select id="x" data-cfg></select></div>
+        <div class="row" id="xRow"><label for="x" id="xLabel">X column</label><select id="x" data-cfg></select></div>
+        <p class="hint" id="groupHint" hidden>Choose a text column to split one series into groups, or leave as “(series)” to compare the Y series side by side.</p>
         <div id="seriesList"></div>
         <button type="button" id="addSeries" class="ghost small">+ Add series</button>
         <div class="row" id="binsRow" hidden><label for="bins">Bins</label><input type="text" id="bins" data-cfg placeholder="auto"></div>
         <label class="check" id="densRow" hidden><input type="checkbox" id="density" data-cfg> Normalise (density)</label>
+        <label class="check" id="histkdeRow" hidden><input type="checkbox" id="histkde" data-cfg> Overlay KDE curve</label>
+        <div id="kdeRows" hidden>
+          <label class="check"><input type="checkbox" id="kdefill" data-cfg checked> Fill under curve</label>
+          <label class="check"><input type="checkbox" id="rug" data-cfg> Rug (tick for each value)</label>
+          <div class="row"><label for="bw">Smoothing</label><input type="number" id="bw" data-cfg value="1" step="0.1" min="0.1" title="Bandwidth adjustment: below 1 is less smooth, above 1 is smoother"></div>
+        </div>
+        <div class="row" id="violinRow" hidden><label for="violininner">Inside violin</label>
+          <select id="violininner" data-cfg><option value="box">Mini box plot</option><option value="quart">Quartile lines</option><option value="stick">Line per value</option><option value="point">Point per value</option></select></div>
+        <label class="check" id="distpointsRow" hidden><input type="checkbox" id="distpoints" data-cfg> Overlay individual values</label>
       </section>
 
       <section>
@@ -78,7 +97,7 @@
           <label class="check"><input type="checkbox" id="xinvert" data-cfg> Invert X</label>
           <label class="check"><input type="checkbox" id="yinvert" data-cfg> Invert Y</label>
         </div>
-        <div class="row"><label for="ticks">Ticks</label><select id="ticks" data-cfg><option value="in">Inward, all four sides</option><option value="out">Outward</option></select></div>
+        <div class="row" id="ticksRow"><label for="ticks">Ticks</label><select id="ticks" data-cfg><option value="in">Inward, all four sides</option><option value="out">Outward</option></select></div>
         <label class="check"><input type="checkbox" id="minor" data-cfg checked> Minor ticks</label>
         <div class="row"><label for="grid">Grid</label><select id="grid" data-cfg><option value="none">None</option><option value="major">Major</option><option value="both">Major + minor</option></select></div>
         <div class="row"><label for="xrot">X tick angle</label><input type="number" id="xrot" data-cfg value="0" step="15" min="0" max="90"></div>
@@ -95,11 +114,52 @@
             <option value="custom">Custom…</option>
           </select></div>
         <div class="row" id="customSize" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="width" data-cfg value="3.5"><input type="text" id="height" data-cfg value="2.6"></div></div>
+        <div class="row"><label for="theme">Theme</label>
+          <select id="theme" data-cfg>
+            <option value="publication">Publication (boxed, inward ticks)</option>
+            <option value="ticks">seaborn ticks</option>
+            <option value="white">seaborn white</option>
+            <option value="whitegrid">seaborn whitegrid</option>
+            <option value="darkgrid">seaborn darkgrid</option>
+          </select></div>
+        <label class="check"><input type="checkbox" id="despine" data-cfg> Remove top and right axes (despine)</label>
         <div class="row"><label for="font">Font</label>
           <select id="font" data-cfg><option value="sans">Sans (DejaVu)</option><option value="serif">Serif (STIX, Times-like)</option><option value="cm">Computer Modern (LaTeX)</option></select></div>
         <div class="row"><label for="fontsize">Font size (pt)</label><input type="number" id="fontsize" data-cfg value="9" min="5" max="24"></div>
         <div class="row"><label for="palette">Colours</label>
-          <select id="palette" data-cfg><option value="okabe-ito">Okabe–Ito (colour-blind safe)</option><option value="tab10">Matplotlib tab10</option><option value="viridis">Viridis</option><option value="greyscale">Greyscale</option></select></div>
+          <select id="palette" data-cfg>
+            <optgroup label="Colour-blind safe">
+              <option value="okabe-ito">Okabe–Ito</option>
+              <option value="colorblind">seaborn colorblind</option>
+            </optgroup>
+            <optgroup label="seaborn categorical">
+              <option value="deep">deep</option>
+              <option value="muted">muted</option>
+              <option value="bright">bright</option>
+              <option value="pastel">pastel</option>
+              <option value="dark">dark</option>
+              <option value="Set1">Set1</option>
+              <option value="Set2">Set2</option>
+              <option value="Paired">Paired</option>
+              <option value="husl">husl</option>
+            </optgroup>
+            <optgroup label="seaborn sequential / diverging">
+              <option value="rocket">rocket</option>
+              <option value="mako">mako</option>
+              <option value="flare">flare</option>
+              <option value="crest">crest</option>
+              <option value="magma">magma</option>
+              <option value="viridis">viridis</option>
+              <option value="icefire">icefire</option>
+              <option value="vlag">vlag</option>
+              <option value="cubehelix">cubehelix</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="tab10">Matplotlib tab10</option>
+              <option value="greyscale">Greyscale</option>
+            </optgroup>
+          </select></div>
+        <div class="swatches" id="swatches"></div>
         <div class="row"><label for="markerfill">Markers</label>
           <select id="markerfill" data-cfg><option value="filled">Filled</option><option value="open">Open</option></select></div>
         <label class="check"><input type="checkbox" id="varymarkers" data-cfg checked> Different marker shape per series</label>
@@ -118,6 +178,9 @@
         <p class="hint">Choose a fit in each series box. Click points on the plot (Exclude tool) to leave them out of the fit.</p>
         <label class="check"><input type="checkbox" id="fitlegend" data-cfg checked> Fit equation in legend</label>
         <label class="check"><input type="checkbox" id="weightedfit" data-cfg> Weight fit by 1/σ (Y error column)</label>
+        <div class="row"><label for="ci">Confidence band</label>
+          <select id="ci" data-cfg><option value="0">None</option><option value="68">68% (≈1σ)</option><option value="95">95%</option><option value="99">99%</option></select></div>
+        <p class="hint">Bands are bootstrapped by seaborn's <code>regplot</code>.</p>
         <label class="check"><input type="checkbox" id="showexcluded" data-cfg checked> Show excluded points as grey ×</label>
       </section>
 
@@ -176,10 +239,10 @@
   </main>
 
   <footer>
-    <p>Built on <a href="https://pyodide.org">Pyodide</a> and <a href="https://matplotlib.org">matplotlib</a>.
+    <p>Built on <a href="https://pyodide.org">Pyodide</a> and <a href="https://matplotlib.org">matplotlib</a> and <a href="https://seaborn.pydata.org">seaborn</a>.
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=1"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>

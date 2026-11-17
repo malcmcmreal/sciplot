@@ -17,6 +17,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator
 
+try:                      # seaborn: palettes, themes, distribution plots, CI bands
+    import seaborn as sns
+except ImportError:       # plotter.py still works without it (matplotlib-only features)
+    sns = None
+
 DATA = {"df": None}
 
 # Okabe & Ito (2008) colour-blind-safe palette, black first
@@ -27,6 +32,11 @@ PALETTES = {
     "viridis": None,   # sampled per number of series
     "greyscale": ["#000000", "#555555", "#888888", "#AAAAAA", "#333333", "#777777"],
 }
+SNS_PALETTES = {"deep", "muted", "bright", "pastel", "dark", "colorblind", "Set1", "Set2",
+                "Set3", "Paired", "tab10", "husl", "hls", "rocket", "mako", "flare", "crest",
+                "magma", "icefire", "vlag", "cubehelix"}
+SNS_THEMES = {"ticks", "white", "whitegrid", "darkgrid"}
+CATEGORICAL = {"bar", "box", "violin", "strip", "swarm"}
 MARKERS = ["o", "s", "^", "D", "v", "P", "X", "<", ">", "h"]
 
 FIG_SIZES = {          # inches (w, h)
@@ -162,9 +172,17 @@ def _style(c):
         "svg.fonttype": "none",      # keep text editable in SVG
         "axes.unicode_minus": True,
     }
-    if c.get("ticks", "in") == "in":
+    theme = c.get("theme", "publication")
+    if theme in SNS_THEMES and sns is not None:
+        rc.update(sns.axes_style(theme))
+        rc.update({"axes.linewidth": 0.8 if theme in ("ticks", "white") else 0,
+                   "xtick.major.size": 3.5 if theme == "ticks" else 0,
+                   "ytick.major.size": 3.5 if theme == "ticks" else 0,
+                   "xtick.minor.size": 2.0 if theme == "ticks" else 0,
+                   "ytick.minor.size": 2.0 if theme == "ticks" else 0})
+    elif c.get("ticks", "in") == "in":
         rc.update({"xtick.direction": "in", "ytick.direction": "in",
-                   "xtick.top": True, "ytick.right": True})
+                   "xtick.top": not c.get("despine"), "ytick.right": not c.get("despine")})
     else:
         rc.update({"xtick.direction": "out", "ytick.direction": "out"})
     if fam == "serif":
@@ -181,6 +199,8 @@ def _style(c):
 
 
 def _colors(name, n):
+    if name in SNS_PALETTES and sns is not None:
+        return sns.color_palette(name, n).as_hex()
     if name == "viridis":
         return [matplotlib.colors.to_hex(plt.get_cmap("viridis")(v))
                 for v in np.linspace(0.0, 0.85, max(n, 2))]
@@ -202,6 +222,66 @@ def _num(v):
         return None if v in (None, "") else float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _distribution(ax, df, c, series, colors, xcol, msgs):
+    """KDE / box / violin / strip / swarm plots (seaborn)."""
+    if sns is None:
+        raise ValueError("This plot type needs seaborn (pip install seaborn).")
+    kind = c["kind"]
+    keep = ~df.index.isin([int(r) for r in c.get("excluded", [])])
+    if kind == "kde":
+        for i, s in enumerate(series):
+            y = pd.to_numeric(df.loc[keep, s["y"]], errors="coerce").dropna()
+            if y.nunique() < 2:
+                msgs.append(f"{s['y']}: not enough distinct values for a KDE")
+                continue
+            sns.kdeplot(x=y, ax=ax, color=colors[i], fill=c.get("kdefill", True),
+                        alpha=0.25 if c.get("kdefill", True) else 1, linewidth=c.get("linewidth", 1.2),
+                        bw_adjust=_num(c.get("bw")) or 1, label=s.get("label") or s["y"])
+            if c.get("rug"):
+                sns.rugplot(x=y, ax=ax, color=colors[i], height=0.04, linewidth=0.6)
+        return
+
+    # long-form table: one row per value, grouped by X categories or by series
+    grouped = xcol and not pd.api.types.is_numeric_dtype(df[xcol]) and len(series) == 1
+    if grouped:
+        s = series[0]
+        long = pd.DataFrame({"group": df.loc[keep, xcol].astype(str),
+                             "value": pd.to_numeric(df.loc[keep, s["y"]], errors="coerce")})
+        order = list(dict.fromkeys(long["group"]))
+        pal = _colors(c.get("palette", "okabe-ito"), len(order))
+    else:
+        long = pd.concat([pd.DataFrame({"group": s.get("label") or s["y"],
+                                        "value": pd.to_numeric(df.loc[keep, s["y"]], errors="coerce")})
+                          for s in series], ignore_index=True)
+        order = [s.get("label") or s["y"] for s in series]
+        pal = colors
+        if xcol and len(series) > 1 and not pd.api.types.is_numeric_dtype(df[xcol]):
+            msgs.append("Grouping by X needs a single series; grouped by series instead")
+    long = long.dropna()
+    common = dict(data=long, x="group", y="value", order=order, hue="group", hue_order=order,
+                  palette=pal, legend=False, ax=ax)
+    lw = 0.8
+    if kind == "box":
+        sns.boxplot(**common, width=0.6, linewidth=lw, fliersize=c.get("markersize", 4) * 0.8,
+                    showfliers=not c.get("distpoints"),
+                    boxprops={"edgecolor": "black"}, whiskerprops={"color": "black"},
+                    capprops={"color": "black"}, medianprops={"color": "black"},
+                    flierprops={"marker": "o", "markerfacecolor": "none", "markeredgecolor": "0.3"})
+    elif kind == "violin":
+        sns.violinplot(**common, inner=c.get("violininner", "box"), linewidth=lw,
+                       cut=0, density_norm="width", linecolor="black")
+    elif kind == "strip":
+        sns.stripplot(**common, jitter=0.2, size=c.get("markersize", 4),
+                      edgecolor="black", linewidth=0.4)
+    elif kind == "swarm":
+        sns.swarmplot(**common, size=c.get("markersize", 4), edgecolor="black", linewidth=0.4)
+    if c.get("distpoints") and kind in ("box", "violin"):
+        sns.stripplot(data=long, x="group", y="value", order=order, color="black",
+                      size=max(1.5, c.get("markersize", 4) * 0.6), jitter=0.15, alpha=0.6,
+                      ax=ax, legend=False)
+    ax.set_xlabel("")
 
 
 def make_figure(c, df=None):
@@ -243,6 +323,17 @@ def make_figure(c, df=None):
                                ha="right" if c.get("xrot") else "center")
             ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
             ax.tick_params(axis="x", which="both", top=False)
+        elif kind == "hist" and c.get("histkde") and sns is not None:
+            bins = int(c["bins"]) if str(c.get("bins", "")).isdigit() else "auto"
+            stat = "density" if c.get("density") else "count"
+            for i, s in enumerate(series):
+                y = pd.to_numeric(df[s["y"]], errors="coerce")
+                y = y[~df.index.isin([int(r) for r in c.get("excluded", [])])].dropna()
+                sns.histplot(x=y, bins=bins, stat=stat, kde=True, ax=ax, color=colors[i],
+                             element="step" if len(series) > 1 else "bars",
+                             fill=len(series) == 1, edgecolor="black" if len(series) == 1 else None,
+                             linewidth=0.6, alpha=0.6 if len(series) == 1 else 1,
+                             label=s.get("label") or s["y"], line_kws={"linewidth": 1.2})
         elif kind == "hist":
             bins = int(c["bins"]) if str(c.get("bins", "")).isdigit() else "auto"
             for i, s in enumerate(series):
@@ -255,6 +346,8 @@ def make_figure(c, df=None):
                 else:
                     ax.hist(y, bins=bins, histtype="step", color=colors[i], linewidth=1.2,
                             label=lbl, density=c.get("density", False))
+        elif kind in ("kde", "box", "violin", "strip", "swarm"):
+            _distribution(ax, df, c, series, colors, xcol, msgs)
         else:
             excluded = set(int(r) for r in c.get("excluded", []))
             for i, s in enumerate(series):
@@ -319,6 +412,13 @@ def make_figure(c, df=None):
                     ss_tot = np.sum((yv - yv.mean()) ** 2)
                     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
                     xx = np.linspace(xv.min(), xv.max(), 200)
+                    ci = int(c.get("ci") or 0)
+                    if ci and sns is not None:
+                        sns.regplot(x=xv, y=yv, order=fit, ci=ci, scatter=False, ax=ax,
+                                    color=col, truncate=True, seed=0, n_boot=500,
+                                    line_kws={"linewidth": 0, "zorder": 1})
+                        if w is not None:
+                            msgs.append(f"{lbl}: confidence band is unweighted (bootstrap)")
                     ax.plot(xx, np.polyval(coef, xx), color=col, linestyle="--",
                             linewidth=0.9, marker="none", zorder=3,
                             label=_fit_label(coef, fit, r2) if c.get("fitlegend", True) else None)
@@ -330,21 +430,32 @@ def make_figure(c, df=None):
         # ---- axes
         xl = c.get("xlabel")
         yl = c.get("ylabel")
+        dist_grouped = kind in ("box", "violin", "strip", "swarm") and xcol \
+            and not pd.api.types.is_numeric_dtype(df[xcol]) and len(series) == 1
         if xl is None or xl == "":
-            xl = "" if kind == "hist" else (xcol or "Index")
+            if kind in ("hist", "kde"):
+                xl = series[0]["y"] if len(series) == 1 else ""
+            elif kind in ("box", "violin", "strip", "swarm"):
+                xl = xcol if dist_grouped else ""
+            else:
+                xl = xcol or "Index"
         if yl is None or yl == "":
-            yl = ("Density" if c.get("density") else "Count") if kind == "hist" else \
-                 (series[0]["y"] if len(series) == 1 else "")
+            if kind == "hist":
+                yl = "Density" if c.get("density") else "Count"
+            elif kind == "kde":
+                yl = "Density"
+            else:
+                yl = series[0]["y"] if len(series) == 1 else ""
         ax.set_xlabel(xl)
         ax.set_ylabel(yl)
         if c.get("title"):
             ax.set_title(c["title"])
-        if c.get("xlog") and kind != "bar":
+        if c.get("xlog") and kind not in CATEGORICAL:
             ax.set_xscale("log")
         if c.get("ylog"):
             ax.set_yscale("log")
         lo, hi = _num(c.get("xmin")), _num(c.get("xmax"))
-        if (lo is not None or hi is not None) and kind != "bar":
+        if (lo is not None or hi is not None) and kind not in CATEGORICAL:
             ax.set_xlim(left=lo, right=hi)
         lo, hi = _num(c.get("ymin")), _num(c.get("ymax"))
         if lo is not None or hi is not None:
@@ -354,7 +465,7 @@ def make_figure(c, df=None):
         if c.get("yinvert"):
             ax.invert_yaxis()
         if c.get("minor", True):
-            if kind != "bar" and ax.get_xscale() == "linear":
+            if kind not in CATEGORICAL and ax.get_xscale() == "linear":
                 ax.xaxis.set_minor_locator(AutoMinorLocator())
             if ax.get_yscale() == "linear":
                 ax.yaxis.set_minor_locator(AutoMinorLocator())
@@ -369,12 +480,25 @@ def make_figure(c, df=None):
         if leg != "off" and (len(series) > 1 or any(int(s.get("fit") or 0) for s in series)
                              or c.get("legendsingle", False)):
             h, l = ax.get_legend_handles_labels()
-            order = sorted(range(len(l)), key=lambda k: l[k].startswith("y = "))
+            names = [s.get("label") or s["y"] for s in series]
+            order = sorted(range(len(l)), key=lambda k: (l[k].startswith("y = "),
+                                                        names.index(l[k]) if l[k] in names else k))
             h, l = [h[k] for k in order], [l[k] for k in order]
-            if leg == "outside":
+            if h and leg == "outside":
                 fig.legend(h, l, loc="outside right upper")
-            else:
+            elif h:
                 ax.legend(h, l, loc=leg)
+
+        if kind in CATEGORICAL:
+            ax.tick_params(axis="x", which="both", top=False, bottom=kind == "bar")
+            if kind != "bar" and c.get("xrot"):
+                plt.setp(ax.get_xticklabels(), rotation=c["xrot"], ha="right")
+        if c.get("despine"):
+            if sns is not None:
+                sns.despine(ax=ax)
+            else:
+                ax.spines[["top", "right"]].set_visible(False)
+            ax.tick_params(which="both", top=False, right=False)
 
         if c.get("panel"):
             ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
@@ -402,7 +526,8 @@ def render(cfg_json, fmt="png", dpi=200):
     plt.close(fig)
     return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
                        "geom": geom, "points": points,
-                       "colors": _colors(c.get("palette", "okabe-ito"), len(c.get("series", [])))})
+                       "colors": _colors(c.get("palette", "okabe-ito"), len(c.get("series", []))),
+                       "swatches": _colors(c.get("palette", "okabe-ito"), 8)})
 
 
 # ------------------------------------------------- standalone use (offline)

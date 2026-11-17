@@ -2,26 +2,27 @@
 
 **Publication-ready plots from CSV, TXT or Excel files, made with matplotlib in your browser.**
 
-A static site that runs real Python (numpy, pandas, matplotlib) in the browser via [Pyodide](https://pyodide.org). No server is involved, and your data never leaves your computer.
+A static site that runs real Python (numpy, pandas, matplotlib, seaborn) in the browser via [Pyodide](https://pyodide.org). No server is involved, and your data never leaves your computer.
 
 Live: https://malcmcmreal.github.io/sciplot/
 
 ## What it does
 
 - **Data:** drop in a `.csv`, `.tsv`, `.txt`, `.dat`, `.xlsx` or `.xls` file, or paste cells copied from Excel. It detects the delimiter and the header row, skips `#`/`%` comment lines, and lets you pick a sheet in Excel files. A data table shows every row.
-- **Plots:** scatter, line, line + markers, step, grouped bar and histogram, with any number of series and X/Y error bars.
-- **Fits:** linear, quadratic or cubic per series, optionally weighted by 1/σ. The equation and R² appear in the legend and below the plot.
+- **Plots:** scatter, line, line + markers, step and grouped bar, with any number of series and X/Y error bars.
+- **Distributions (seaborn):** histogram (optional KDE overlay), KDE with rug, box, violin, strip and swarm plots. These compare the Y series side by side, or split one series by a text column (e.g. sample or lithology).
+- **Fits:** linear, quadratic or cubic per series, optionally weighted by 1/σ, with an optional 68/95/99% confidence band (seaborn `regplot`, bootstrapped). The equation and R² appear in the legend and below the plot.
 - **Interactive preview:**
   - Hover to read off coordinates and see the nearest point (sample name, row and values).
   - Drag a box to zoom (this fills in the axis ranges). Double-click to reset.
   - Use the **Exclude points** tool to click points, or click row numbers in the table, to drop outliers from the plot and the fit. Excluded points can be shown as grey ×.
-- **Publication style:** journal figure sizes (89 / 140 / 183 mm), inward ticks on all four sides, minor ticks, and fonts in sans, STIX serif (Times-like) or Computer Modern (LaTeX). Colour palettes include Okabe–Ito (colour-blind safe), viridis and greyscale. Markers can be open or filled with a different shape per series, and you can add panel labels such as "(a)". Axis labels support maths text (`$\delta^{18}$O`).
+- **Publication style:** journal figure sizes (89 / 140 / 183 mm), inward ticks on all four sides, minor ticks, and fonts in sans, STIX serif (Times-like) or Computer Modern (LaTeX). Colour palettes include Okabe–Ito and all the main seaborn palettes (colorblind, deep, muted, pastel, Set2, rocket, mako, flare, crest, vlag and more). Themes: a boxed publication style or seaborn's ticks / white / whitegrid / darkgrid, with optional despine. Markers can be open or filled with a different shape per series, and you can add panel labels such as "(a)". Axis labels support maths text (`$\delta^{18}$O`).
 - **Export:** PDF (TrueType fonts embedded), SVG (text stays editable) and PNG at 300/600/1200 dpi. Exported figures are exactly the chosen size.
 - **Settings:** your last settings are remembered. **Copy link** puts the settings in the URL so you can bookmark or share a style, and settings can be saved and loaded as JSON (useful as a house style for a paper).
 
 ## Reproducing a figure offline
 
-**Download Python + settings** saves `plotter.py` plus a `*_plot.json` settings file. With numpy, pandas, matplotlib and openpyxl installed:
+**Download Python + settings** saves `plotter.py` plus a `*_plot.json` settings file. With numpy, pandas, matplotlib, seaborn and openpyxl installed:
 
 ```sh
 python plotter.py data.csv data_plot.json figure.pdf
