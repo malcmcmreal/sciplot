@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SciPlot – publication-ready plots from your data, in the browser</title>
+  <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
+  <link rel="stylesheet" href="style.css?v=1">
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>SciPlot</h1>
+      <p class="tag">Publication-ready plots from CSV, TXT or Excel files, made with matplotlib in your browser. Your data never leaves your computer.</p>
+    </div>
+    <div class="status" id="status" aria-live="polite">Starting Python…</div>
+  </header>
+
+  <main class="layout">
+    <aside class="controls">
+      <section>
+        <h2>Data</h2>
+        <div id="drop" class="drop" tabindex="0" role="button">
+          <strong>Drop a file here</strong> or click to choose<br>
+          <span class="hint">.csv .txt .dat .tsv .xlsx .xls</span>
+          <div id="fname" class="fname"></div>
+        </div>
+        <input type="file" id="file" accept=".csv,.txt,.dat,.tsv,.xlsx,.xlsm,.xls" hidden>
+        <div class="row">
+          <label for="example">Or try</label>
+          <select id="example">
+            <option value="">an example…</option>
+            <option value="examples/age-elevation.csv">Age–elevation profile (.csv)</option>
+            <option value="examples/raman-spectrum.txt">Raman spectrum (.txt)</option>
+            <option value="examples/track-lengths.xlsx">Track lengths (.xlsx, 2 sheets)</option>
+          </select>
+        </div>
+        <details class="sub">
+          <summary>Paste from Excel</summary>
+          <textarea id="paste" rows="5" placeholder="Copy cells in Excel (including the header row) and paste here"></textarea>
+          <button type="button" id="pasteLoad" class="small">Use pasted data</button>
+        </details>
+        <div class="row"><label for="header">Header row</label>
+          <select id="header"><option value="auto">Auto-detect</option><option value="yes">First row</option><option value="no">None</option></select></div>
+        <div class="row" id="sheetRow" hidden><label for="sheet">Sheet</label><select id="sheet"></select></div>
+      </section>
+
+      <section>
+        <h2>Plot</h2>
+        <div class="row"><label for="kind">Type</label>
+          <select id="kind" data-cfg>
+            <option value="scatter">Scatter</option>
+            <option value="linemarkers">Line + markers</option>
+            <option value="line">Line</option>
+            <option value="step">Step</option>
+            <option value="bar">Bar (grouped)</option>
+            <option value="hist">Histogram</option>
+          </select></div>
+        <div class="row" id="xRow"><label for="x">X column</label><select id="x" data-cfg></select></div>
+        <div id="seriesList"></div>
+        <button type="button" id="addSeries" class="ghost small">+ Add series</button>
+        <div class="row" id="binsRow" hidden><label for="bins">Bins</label><input type="text" id="bins" data-cfg placeholder="auto"></div>
+        <label class="check" id="densRow" hidden><input type="checkbox" id="density" data-cfg> Normalise (density)</label>
+      </section>
+
+      <section>
+        <h2>Axes</h2>
+        <div class="row"><label for="title">Title</label><input type="text" id="title" data-cfg></div>
+        <div class="row"><label for="xlabel">X label</label><input type="text" id="xlabel" data-cfg placeholder="column name"></div>
+        <div class="row"><label for="ylabel">Y label</label><input type="text" id="ylabel" data-cfg placeholder="column name"></div>
+        <p class="hint">Maths works: <code>$\delta^{18}$O (‰)</code>, <code>$^{4}$He</code>, <code>$T$ (°C)</code></p>
+        <div class="row"><label>X range</label><div class="pair"><input type="text" id="xmin" data-cfg placeholder="min"><input type="text" id="xmax" data-cfg placeholder="max"></div></div>
+        <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ymin" data-cfg placeholder="min"><input type="text" id="ymax" data-cfg placeholder="max"></div></div>
+        <div class="checks4">
+          <label class="check"><input type="checkbox" id="xlog" data-cfg> Log X</label>
+          <label class="check"><input type="checkbox" id="ylog" data-cfg> Log Y</label>
+          <label class="check"><input type="checkbox" id="xinvert" data-cfg> Invert X</label>
+          <label class="check"><input type="checkbox" id="yinvert" data-cfg> Invert Y</label>
+        </div>
+        <div class="row"><label for="ticks">Ticks</label><select id="ticks" data-cfg><option value="in">Inward, all four sides</option><option value="out">Outward</option></select></div>
+        <label class="check"><input type="checkbox" id="minor" data-cfg checked> Minor ticks</label>
+        <div class="row"><label for="grid">Grid</label><select id="grid" data-cfg><option value="none">None</option><option value="major">Major</option><option value="both">Major + minor</option></select></div>
+        <div class="row"><label for="xrot">X tick angle</label><input type="number" id="xrot" data-cfg value="0" step="15" min="0" max="90"></div>
+      </section>
+
+      <section>
+        <h2>Style</h2>
+        <div class="row"><label for="size">Figure size</label>
+          <select id="size" data-cfg>
+            <option value="single">Single column (89 mm)</option>
+            <option value="onehalf">1.5 column (140 mm)</option>
+            <option value="double">Full width (183 mm)</option>
+            <option value="screen">Slides (8 × 5 in)</option>
+            <option value="custom">Custom…</option>
+          </select></div>
+        <div class="row" id="customSize" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="width" data-cfg value="3.5"><input type="text" id="height" data-cfg value="2.6"></div></div>
+        <div class="row"><label for="font">Font</label>
+          <select id="font" data-cfg><option value="sans">Sans (DejaVu)</option><option value="serif">Serif (STIX, Times-like)</option><option value="cm">Computer Modern (LaTeX)</option></select></div>
+        <div class="row"><label for="fontsize">Font size (pt)</label><input type="number" id="fontsize" data-cfg value="9" min="5" max="24"></div>
+        <div class="row"><label for="palette">Colours</label>
+          <select id="palette" data-cfg><option value="okabe-ito">Okabe–Ito (colour-blind safe)</option><option value="tab10">Matplotlib tab10</option><option value="viridis">Viridis</option><option value="greyscale">Greyscale</option></select></div>
+        <div class="row"><label for="markerfill">Markers</label>
+          <select id="markerfill" data-cfg><option value="filled">Filled</option><option value="open">Open</option></select></div>
+        <label class="check"><input type="checkbox" id="varymarkers" data-cfg checked> Different marker shape per series</label>
+        <div class="row"><label for="markersize">Marker size</label><input type="number" id="markersize" data-cfg value="4" step="0.5" min="1"></div>
+        <div class="row"><label for="linewidth">Line width</label><input type="number" id="linewidth" data-cfg value="1.2" step="0.1" min="0.2"></div>
+        <div class="row"><label for="capsize">Error bar caps</label><input type="number" id="capsize" data-cfg value="2" step="0.5" min="0"></div>
+        <div class="row"><label for="legend">Legend</label>
+          <select id="legend" data-cfg><option value="best">Best position</option><option value="upper left">Upper left</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="lower right">Lower right</option><option value="outside">Outside, right</option><option value="off">Off</option></select></div>
+        <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
+        <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
+        <div class="row"><label for="panel">Panel label</label><input type="text" id="panel" data-cfg placeholder="e.g. (a)"></div>
+      </section>
+
+      <section>
+        <h2>Fitting</h2>
+        <p class="hint">Choose a fit in each series box. Click points on the plot (Exclude tool) to leave them out of the fit.</p>
+        <label class="check"><input type="checkbox" id="fitlegend" data-cfg checked> Fit equation in legend</label>
+        <label class="check"><input type="checkbox" id="weightedfit" data-cfg> Weight fit by 1/σ (Y error column)</label>
+        <label class="check"><input type="checkbox" id="showexcluded" data-cfg checked> Show excluded points as grey ×</label>
+      </section>
+
+      <section class="actions">
+        <button type="button" id="copyLink" class="ghost small">Copy link to these settings</button>
+        <button type="button" id="saveCfg" class="ghost small">Save settings</button>
+        <button type="button" id="loadCfg" class="ghost small">Load settings</button>
+        <input type="file" id="cfgFile" accept=".json" hidden>
+        <button type="button" id="reset" class="ghost small">Reset</button>
+      </section>
+    </aside>
+
+    <section class="views">
+      <div class="figpanel">
+        <div class="figtools">
+          <div class="seg" role="group" aria-label="Plot tool">
+            <button type="button" data-tool="zoom" class="on" title="Drag a box to zoom. Double-click to reset.">Zoom</button>
+            <button type="button" data-tool="exclude" title="Click a point to leave it out of the plot and fit">Exclude points</button>
+          </div>
+          <button type="button" id="resetZoom" class="ghost small" disabled>Reset zoom</button>
+          <button type="button" id="clearExcl" class="ghost small" hidden>Clear exclusions</button>
+          <span class="readout" id="readout"></span>
+        </div>
+        <div class="figwrap" id="figwrap">
+          <div class="stage" id="stage">
+            <img id="fig" alt="Plot preview">
+            <canvas id="overlay"></canvas>
+            <div class="tip" id="tip" hidden></div>
+          </div>
+          <p class="placeholder" id="placeholder">Load a data file or pick an example to begin.<br><span class="hint">Python takes about 10 seconds to start the first time. After that your browser caches it.</span></p>
+        </div>
+      </div>
+
+      <div class="export">
+        <h2>Export</h2>
+        <div class="row-inline">
+          <button type="button" data-exp="pdf" disabled>PDF</button>
+          <button type="button" data-exp="svg" disabled>SVG</button>
+          <button type="button" data-exp="png" disabled>PNG</button>
+          <label class="inline">at <select id="dpi"><option>300</option><option selected>600</option><option>1200</option></select> dpi</label>
+          <span class="spacer"></span>
+          <button type="button" id="dlScript" class="ghost" disabled title="plotter.py plus a settings file that rebuilds this figure in Python">Download Python + settings</button>
+        </div>
+        <p class="hint">PDF embeds TrueType fonts; SVG keeps text editable in Illustrator or Inkscape. The figure is exactly the size chosen in Style.</p>
+      </div>
+
+      <div id="msgs" class="msgs"></div>
+      <div id="err" class="err"></div>
+
+      <div class="datapanel" id="dataPanel" hidden>
+        <h2>Data</h2>
+        <div class="hint" id="dataInfo"></div>
+        <div class="scroll"><table id="dataTable"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Built on <a href="https://pyodide.org">Pyodide</a> and <a href="https://matplotlib.org">matplotlib</a>.
+      Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
+  </footer>
+
+  <script type="module" src="app.js?v=1"></script>
+</body>
+</html>
