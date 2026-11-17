@@ -94,7 +94,7 @@ button.small { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
 button:disabled { opacity: 0.45; cursor: default; }
 .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 
-.views { display: grid; gap: 1rem; min-width: 0; align-content: start; }
+.views { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; align-content: start; }
 .figpanel, .export, .datapanel {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.8rem 1rem;
 }
