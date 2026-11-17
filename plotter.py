@@ -897,13 +897,48 @@ def make_figure(c, df=None):
         h += [e[0] for e in extra]
         l += [e[1] for e in extra]
         if leg == "best" and extra:
-            leg = "outside"          # size/shape/category keys are too big to sit on the data
-        if leg != "off" and h:
+            leg = "below"            # size/shape/category keys are too big to sit on the data
+        if leg != "off" and h and leg == "below":
+            n_base = len(h) - len(extra)
+            groups, cur = [], []
+            for e in extra:
+                if isinstance(e[0], Rectangle) and cur:
+                    groups.append(cur)
+                    cur = []
+                cur.append(e)
+            if cur:
+                groups.append(cur)
+            if not groups:                 # nothing mapped: plain legend underneath
+                groups = [list(zip(h, l))]
+                n_base = 0
+            elif n_base:                   # series / fit / reference lines stay on the axes
+                LB = ax.legend(h[:n_base], l[:n_base], loc="best")
+                LB.set_in_layout(False)
+                ax.add_artist(LB)
+            rows = max(len(g) for g in groups)
+            blank = (Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False), "")
+            hh, ll = [], []
+            for g in groups:
+                g = g + [blank] * (rows - len(g))
+                hh += [e[0] for e in g]
+                ll += [e[1] for e in g]
+            fs = plt.rcParams["legend.fontsize"]
+            fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9) - 1
+            for size in (fs, fs - 1, fs - 2, fs - 3):
+                L = fig.legend(hh, ll, loc="outside lower center", ncols=len(groups),
+                               columnspacing=1.0, handletextpad=0.3, fontsize=max(size, 4.5))
+                fig.canvas.draw()
+                if L.get_window_extent().width <= fig.bbox.width * 0.98 or size <= 4.5:
+                    break
+                L.remove()
+            h, l = hh, ll
+        elif leg != "off" and h:
             if leg == "outside":
                 L = fig.legend(h, l, loc="outside right upper")
             else:
                 L = ax.legend(h, l, loc=leg)
                 L.set_in_layout(False)
+        if leg != "off" and h:
             for txt, lab in zip(L.get_texts(), l):
                 if any(lab == e[1] and isinstance(e[0], Rectangle) for e in extra):
                     txt.set_fontweight("bold")
