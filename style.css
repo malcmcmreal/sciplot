@@ -36,8 +36,9 @@ p.hint { margin: 0.4rem 0; }
 .status.ok { background: var(--ok); }
 .status.fail { background: var(--fail); }
 
-.layout { display: grid; grid-template-columns: 330px 1fr; gap: 1rem; padding: 1rem 1.5rem; }
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.layout { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 1rem; padding: 1rem 1.5rem; }
+.layout > * { min-width: 0; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); padding: 0.75rem; } .top { padding: 0.75rem; } }
 
 .controls {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
