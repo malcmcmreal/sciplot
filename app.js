@@ -69,8 +69,16 @@ async function setFile(name, bytes) {
     return;
   }
   if (info) {
-    // new dataset: keep the style, drop labels and ranges that belonged to the old one
+    // new dataset: keep the style, drop labels, ranges and picker formulas that belonged to the old one
     ['title', 'xlabel', 'ylabel', 'xmin', 'xmax', 'ymin', 'ymax'].forEach((id) => { $(id).value = ''; });
+    const fxNames = new Set(calcRows().filter((r) => r.dataset.fx).map((r) => r.querySelector('.c-name').value.trim()));
+    calcRows().filter((r) => r.dataset.fx).forEach((r) => r.remove());
+    for (const sel of colSelects()) {
+      if (!fxNames.has(sel.value)) continue;
+      if (sel.id === 'x') sel.innerHTML = '';      // lets the new data pick its first numeric column
+      else sel.value = '';
+    }
+    document.querySelectorAll('.fx-box').forEach((b) => b.remove());
   }
   curFile = { name, bytes, sheet: null };
   $('fname').textContent = name;
