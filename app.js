@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 19;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 21;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -204,6 +204,10 @@ function fxBox(sel, expr = '', err = '') {
   return box;
 }
 
+function usedByOtherPanels(name) {
+  if (!figure || figure.panels.length < 2) return false;
+  return figure.panels.some((p, i) => i !== figure.active && JSON.stringify(p).includes(JSON.stringify(name)));
+}
 function commitFormula(box) {
   const sel = box._sel;
   const expr = box.querySelector('.fx-input').value.trim();
@@ -211,7 +215,7 @@ function commitFormula(box) {
   const old = box._old;                                   // formula column this picker showed before
   const st = selectState();
   let row = old && calcRowByName(old);
-  if (row && row.dataset.fx) {
+  if (row && row.dataset.fx && !usedByOtherPanels(old)) {
     row.querySelector('.c-name').value = expr;
     row.querySelector('.c-expr').value = expr;
   } else {
@@ -251,6 +255,15 @@ function decorateFormulas() {
     if (sel.value === FX) { fxBox(sel); continue; }
     if (r && r.dataset.fx) { used.add(sel.value); fxBox(sel, r.querySelector('.c-expr').value); }
     else if (next && next.classList.contains('fx-box')) next.remove();
+  }
+  // formulas still used by the other panels of a multi-panel figure must survive
+  if (figure && figure.panels.length > 1) {
+    const walk = (v) => {
+      if (typeof v === 'string') used.add(v);
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+    };
+    figure.panels.forEach((p, i) => { if (i !== figure.active) walk(p); });
   }
   let removed = false;
   for (const r of calcRows()) {
@@ -640,6 +653,7 @@ function updateVisibility() {
   $('huecatRow').hidden = !(mappable && hueNumeric);
   $('scaleRows').hidden = !((mappable && hueNumeric && !$('huecat').checked) || hc);
   $('huelogRow').hidden = hc && !mappable;
+  $('huerobustRow').hidden = $('huelogRow').hidden;
   $('sizeRangeRow').hidden = $('sizeby').value === '';
   const xy = !dist && !bar;
   $('refaxisRow').hidden = !xy;

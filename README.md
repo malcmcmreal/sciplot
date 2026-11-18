@@ -46,10 +46,11 @@ Each panel can plot a different sheet of the workbook: activate the panel, then 
 
 - columns
 - figure size: journal single, 1.5 or double column, or custom
-- panel aspect and spacing
+- panel aspect and spacing, plus column/row gaps in mm that can go negative to pull panels together once inner labels are hidden (polar panels get rows shaped to fit them)
 - shared X/Y limits, per row, column or across all panels (panels are only linked when they plot the same variable)
 - hiding inner tick labels or titles
 - mirroring axes to the right/top
+- **Ignore extreme values** (Colour section) sets a numeric colour range to the 2nd–98th percentile, so a few outliers don't squash every other point into one colour
 - one shared legend / colour key for the whole figure (right or below) instead of one per panel; panels colouring by the same column always share one colour scale
 - automatic panel letters, e.g. (a) / a / A, outside or inside each panel
 

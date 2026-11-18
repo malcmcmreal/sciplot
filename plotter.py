@@ -473,6 +473,11 @@ class Mapping:
             hi = _num(c.get("huemax"))
             lo = lo if lo is not None else c.get("_hue_lo")     # figure-wide range (multi-panel)
             hi = hi if hi is not None else c.get("_hue_hi")
+            if c.get("huerobust"):                              # ignore a few extreme values
+                fin = vv[np.isfinite(vv) & ((vv > 0) if c.get("huelog") else True)]
+                if len(fin):
+                    lo = lo if lo is not None else float(np.percentile(fin, 2))
+                    hi = hi if hi is not None else float(np.percentile(fin, 98))
             if c.get("huelog"):
                 pos = vv[vv > 0]
                 lo = lo if lo is not None else (pos.min() if len(pos) else 1)
@@ -566,6 +571,15 @@ class Mapping:
                                  markersize=base_ms), k))
         return H
 
+    def _extend(self):
+        v = self.hue["values"]
+        v = v[np.isfinite(v)]
+        if not len(v):
+            return "neither"
+        lo, hi = self.hue["norm"].vmin, self.hue["norm"].vmax
+        a, b = v.min() < lo - 1e-12 * abs(lo), v.max() > hi + 1e-12 * abs(hi)
+        return {(True, True): "both", (True, False): "min", (False, True): "max"}.get((bool(a), bool(b)), "neither")
+
     def colorbar(self, fig, ax):
         if self.hue and self.hue["continuous"] and self.c.get("_sharedkey"):
             ax._sp_cbar = self          # drawn once for the whole figure
@@ -573,7 +587,7 @@ class Mapping:
         if self.hue and self.hue["continuous"]:
             sm = matplotlib.cm.ScalarMappable(norm=self.hue["norm"], cmap=self.hue["cmap"])
             cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25,
-                              shrink=0.7 if ax.name == "polar" else 1.0)
+                              shrink=0.7 if ax.name == "polar" else 1.0, extend=self._extend())
             cb.set_label(self.c.get("huelabel") or self.hue["col"])
             if isinstance(self.hue["norm"], matplotlib.colors.LogNorm):
                 cb.ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(subs=(1, 2, 5)))
@@ -1796,8 +1810,10 @@ def _common_hue(panels):
             vv = v.astype(float)
             vv = vv[np.isfinite(vv) & ((vv > 0) if log else True)]
             if len(vv):
+                robust = any(out[i].get("huerobust") for i in idx)
+                lo, hi = (np.percentile(vv, 2), np.percentile(vv, 98)) if robust else (vv.min(), vv.max())
                 for i in idx:
-                    out[i]["_hue_lo"], out[i]["_hue_hi"] = float(vv.min()), float(vv.max())
+                    out[i]["_hue_lo"], out[i]["_hue_hi"] = float(lo), float(hi)
         else:
             cats = list(dict.fromkeys(v.astype(str).where(v.notna(), "–")))
             for i in idx:
@@ -1820,13 +1836,6 @@ def _shared_key(fig, axes, mode, base):
             seen.add(key)
             H.append(h)
             L.append(l)
-    # titles that ended up with no entries under them (all duplicates) are dropped
-    keep = []
-    for k, (h, l) in enumerate(zip(H, L)):
-        if isinstance(h, Rectangle) and (k + 1 == len(H) or isinstance(H[k + 1], Rectangle)):
-            continue
-        keep.append(k)
-    H, L = [H[k] for k in keep], [L[k] for k in keep]
     cbars = {}
     for ax in axes:
         m = getattr(ax, "_sp_cbar", None)
@@ -1837,7 +1846,7 @@ def _shared_key(fig, axes, mode, base):
     for lab, m in cbars.items():
         sm = matplotlib.cm.ScalarMappable(norm=m.hue["norm"], cmap=m.hue["cmap"])
         cb = fig.colorbar(sm, ax=axes, location=loc, pad=0.02, fraction=0.04, aspect=35,
-                          shrink=0.8)
+                          shrink=0.8, extend=m._extend())
         cb.set_label(lab)
         if isinstance(m.hue["norm"], matplotlib.colors.LogNorm):
             cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
@@ -1873,6 +1882,47 @@ def _shared_key(fig, axes, mode, base):
             txt.set_fontweight("bold")
 
 
+def _nudge_gaps(fig, cells, rows, cols, gx, gy):
+    """Fine-tune the gaps between panels after the automatic layout (gx, gy in inches; negative
+    pulls panels together). The figure shrinks or grows to match, so nothing is cut off."""
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    W, H = fig.get_size_inches()
+    def box(a):                       # (left, top, width, height) in inches from the top-left
+        p = a.get_position()
+        return p.x0 * W, (1 - p.y1) * H, p.width * W, p.height * H
+    pan = [(box(a), r, c) for a, _, r, c in cells]
+    def bounds(k, n):                 # midpoints between neighbouring columns / rows
+        lo = [min(b[k] for b, *rc in pan if rc[1 if k == 0 else 0] == j) for j in range(n)
+              if any(rc[1 if k == 0 else 0] == j for _, *rc in pan)]
+        hi = [max(b[k] + b[k + 2] for b, *rc in pan if rc[1 if k == 0 else 0] == j) for j in range(n)
+              if any(rc[1 if k == 0 else 0] == j for _, *rc in pan)]
+        return [(hi[j - 1] + lo[j]) / 2 for j in range(1, len(lo))]
+    bx, by = bounds(0, cols), bounds(1, rows)
+    pw = np.median([b[2] for b, *_ in pan]) if pan else W
+    ph = np.median([b[3] for b, *_ in pan]) if pan else H
+    nx, ny = len(bx) + 1, len(by) + 1
+    W2, H2 = W + (nx - 1) * gx, H + (ny - 1) * gy
+    if W2 < 1 or H2 < 1:
+        return
+    for a in fig.axes:
+        x, y, w, h = box(a)
+        if w > 1.5 * pw and nx > 1:   # spans several columns (shared colour bar): stretch it
+            w = w * (W2 / W)
+            x = x * (W2 / W)
+        else:
+            j = sum(x + w / 2 > b for b in bx)
+            x += j * gx
+        if h > 1.5 * ph and ny > 1:
+            h = h * (H2 / H)
+            y = y * (H2 / H)
+        else:
+            i = sum(y + h / 2 > b for b in by)
+            y += i * gy
+        a.set_position([x / W2, 1 - (y + h) / H2, w / W2, h / H2])
+    fig.set_size_inches(W2, H2)
+
+
 def render_layout(payload_json, fmt="png", dpi=200, meta=""):
     """Several panels in a grid. payload = {layout, panels: [cfg...], active, excluded}."""
     import math
@@ -1893,8 +1943,15 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
     if L.get("size") == "custom":
         width = _num(L.get("width")) or 7.2
     aspect = _num(L.get("aspect")) or 0.75
+    # each row is as tall as its tallest panel; polar sectors have their own shape
+    def _shape(pc):
+        if pc.get("kind") != "polar":
+            return aspect
+        return {"half": 0.58}.get(pc.get("polstyle", "quarter"), 1.0)
+    ratios = [max([_shape(panels[k]) for k in range(r * cols, min((r + 1) * cols, n)) if k < len(panels)]
+                  or [aspect]) for r in range(rows)]
     height = _num(L.get("height")) if L.get("size") == "custom" and _num(L.get("height")) else \
-        rows * (width / cols) * aspect + 0.25
+        (width / cols) * sum(ratios) + 0.25
     base = panels[active] if panels else {}
     cells, results = [], []
     legmode = L.get("legend", "each")
@@ -1905,7 +1962,7 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         sp = _num(L.get("spacing"))
         sp = 0.02 if sp is None else sp
         fig.get_layout_engine().set(wspace=sp, hspace=sp, w_pad=0.03, h_pad=0.03)
-        gs = fig.add_gridspec(rows, cols)
+        gs = fig.add_gridspec(rows, cols, height_ratios=ratios)
     for i, pc in enumerate(panels):
         r, col = divmod(i, cols)
         sheet = pc.get("sheet") or DATA.get("sheet")
@@ -1981,6 +2038,11 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         else:
             xy = (-0.10, 1.06) if ax.name == "polar" else (-0.02, 1.02)
             ax.text(*xy, text, transform=ax.transAxes, ha="right", va="bottom", fontweight="bold", fontsize=fs)
+
+    gx, gy = _num(L.get("gapx")) or 0.0, _num(L.get("gapy")) or 0.0
+    if gx or gy:
+        with plt.rc_context(_style(base)):
+            _nudge_gaps(fig, cells, rows, cols, gx / 25.4, gy / 25.4)
 
     buf = io.BytesIO()
     with plt.rc_context(_style(base)):

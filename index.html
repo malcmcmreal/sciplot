@@ -37,7 +37,9 @@
           <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
         <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
         <div class="row"><label for="lay-aspect">Panel height ÷ width</label><input type="number" id="lay-aspect" data-lay value="0.75" min="0.2" max="3" step="0.05"></div>
-        <div class="row"><label for="lay-spacing">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
+        <div class="row"><label for="lay-spacing" title="Automatic spacing between panels (0 = as tight as the labels allow)">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
+        <div class="row"><label for="lay-gapx" title="Extra gap between columns after the automatic layout, in mm. Negative pulls panels closer together (useful once inner labels are hidden).">Column gap ± mm</label><input type="number" id="lay-gapx" data-lay value="0" min="-30" max="30" step="0.5"></div>
+        <div class="row"><label for="lay-gapy" title="Extra gap between rows after the automatic layout, in mm. Negative pulls panels closer together.">Row gap ± mm</label><input type="number" id="lay-gapy" data-lay value="0" min="-30" max="30" step="0.5"></div>
         <h3 class="subhead">Axes across panels</h3>
         <div class="row"><label for="lay-sharex">Same X range</label>
           <select id="lay-sharex" data-lay><option value="none">No</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
@@ -226,6 +228,7 @@
             </select></div>
           <div class="row"><label>Colour range</label><div class="pair"><input type="text" id="huemin" data-cfg placeholder="min"><input type="text" id="huemax" data-cfg placeholder="max"></div></div>
           <label class="check" id="huelogRow"><input type="checkbox" id="huelog" data-cfg> Log colour scale</label>
+          <label class="check" id="huerobustRow" title="A few extreme values can squash everything else into one colour. This sets the colour range to the 2nd–98th percentile; values beyond it get the end colours (arrows on the colour bar)."><input type="checkbox" id="huerobust" data-cfg> Ignore extreme values (2–98 %)</label>
           <div class="row"><label for="huelabel">Colour bar label</label><input type="text" id="huelabel" data-cfg placeholder="column name"></div>
         </div>
             </details>
@@ -572,6 +575,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=22"></script>
+  <script type="module" src="app.js?v=24"></script>
 </body>
 </html>
