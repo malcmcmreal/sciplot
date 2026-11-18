@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -27,85 +27,6 @@
   <main class="layout" id="plotView">
     <aside class="controls">
       <div class="editing" id="editingNote" hidden>Editing panel <b id="editingLabel">(a)</b> · click another panel on the figure to edit it</div>
-      <details class="sec" id="sec-layout">
-        <summary>Figure layout <span class="badge" id="b-layout"></span></summary>
-        <p class="hint" id="layoutHint">One panel. Use <b>+ Duplicate</b> or <b>+ Blank</b> above the plot to add panels; these settings then apply to the whole figure.</p>
-        <h3 class="subhead">Grid &amp; size</h3>
-        <div class="row"><label for="lay-cols">Columns</label>
-          <select id="lay-cols" data-lay><option value="">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
-        <div class="row"><label for="lay-size">Figure width</label>
-          <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
-        <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
-        <div class="row"><label for="lay-aspect">Panel height ÷ width</label><input type="number" id="lay-aspect" data-lay value="0.75" min="0.2" max="3" step="0.05"></div>
-        <div class="row"><label for="lay-spacing" title="Automatic spacing between panels (0 = as tight as the labels allow)">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
-        <div class="row"><label for="lay-gapx" title="Extra gap between columns after the automatic layout, in mm. Negative pulls panels closer together (useful once inner labels are hidden).">Column gap ± mm</label><input type="number" id="lay-gapx" data-lay value="0" min="-30" max="30" step="0.5"></div>
-        <div class="row"><label for="lay-gapy" title="Extra gap between rows after the automatic layout, in mm. Negative pulls panels closer together.">Row gap ± mm</label><input type="number" id="lay-gapy" data-lay value="0" min="-30" max="30" step="0.5"></div>
-        <h3 class="subhead">Axes across panels</h3>
-        <div class="row"><label for="lay-sharex">Same X range</label>
-          <select id="lay-sharex" data-lay><option value="none">No</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
-        <div class="row"><label for="lay-sharey">Same Y range</label>
-          <select id="lay-sharey" data-lay><option value="none">No</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
-        <p class="hint">Only panels plotting the same variable on that axis are linked.</p>
-        <div class="row"><label for="lay-inner">Between panels</label>
-          <select id="lay-inner" data-lay><option value="keep">Keep all labels</option><option value="titles">Hide inner axis titles</option><option value="all">Hide inner titles and tick labels</option></select></div>
-        <div class="row"><label for="lay-mirrory">Y axis on right</label>
-          <select id="lay-mirrory" data-lay><option value="none">No</option><option value="right">Right-hand column</option><option value="all">All panels</option></select></div>
-        <div class="row"><label for="lay-mirrorx">X axis on top</label>
-          <select id="lay-mirrorx" data-lay><option value="none">No</option><option value="top">Top row</option><option value="all">All panels</option></select></div>
-        <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
-          <select id="lay-legend" data-lay><option value="each">Each panel</option><option value="right">One shared key, right</option><option value="below">One shared key, below</option></select></div>
-        <h3 class="subhead">Panel letters</h3>
-        <div class="row"><label for="lay-labels">Style</label>
-          <select id="lay-labels" data-lay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="a.">a.</option><option value="A">A</option><option value="(A)">(A)</option><option value="A)">A)</option><option value="none">None</option></select></div>
-        <div class="row"><label for="lay-labelpos">Position</label>
-          <select id="lay-labelpos" data-lay><option value="outside">Outside top-left</option><option value="inside">Inside top-left</option></select></div>
-        <p class="hint">A panel's own <i>Panel label</i> (Style → Legend &amp; labels) overrides its letter. Hide a panel's axes under Axes.</p>
-      </details>
-
-      <details class="sec" id="sec-data" open>
-        <summary>Data <span class="badge" id="b-data"></span></summary>
-        <div id="drop" class="drop" tabindex="0" role="button">
-          <strong>Drop a file here</strong> or click to choose<br>
-          <span class="hint">.csv .txt .dat .tsv .xlsx .xls · or a .sciplot project / exported figure</span>
-          <div id="fname" class="fname"></div>
-        </div>
-        <input type="file" id="file" accept=".csv,.txt,.dat,.tsv,.xlsx,.xlsm,.xls,.sciplot,.png,.svg,.pdf" hidden>
-        <div class="row">
-          <label for="example">Or try</label>
-          <select id="example">
-            <option value="">an example…</option>
-            <option value="examples/age-elevation.csv">Age–elevation profile (.csv)</option>
-            <option value="examples/raman-spectrum.txt">Raman spectrum (.txt)</option>
-            <option value="examples/track-lengths.xlsx">Track lengths (.xlsx, 2 sheets)</option>
-            <option value="examples/ahe-grains.csv">AHe single grains: eU, Rs, lithology (.csv)</option>
-            <option value="examples/instrument-export.csv">Instrument export with metadata header (.csv)</option>
-          </select>
-        </div>
-        <details class="sub">
-          <summary>Paste from Excel</summary>
-          <textarea id="paste" rows="5" placeholder="Copy cells in Excel (including the header row) and paste here"></textarea>
-          <button type="button" id="pasteLoad" class="small">Use pasted data</button>
-        </details>
-        <div class="row"><label for="header">Header row</label>
-          <select id="header"><option value="auto">Auto-detect</option><option value="yes">First row</option><option value="row">Choose row…</option><option value="no">None (no names)</option></select></div>
-        <div id="headerRows" hidden>
-          <div class="row"><label for="headerrow">Header is row</label><input type="number" id="headerrow" value="1" min="1"></div>
-          <div class="row"><label for="skipafter">Skip after it</label><input type="number" id="skipafter" value="0" min="0" title="Rows to skip straight after the header, e.g. a units row"></div>
-          <p class="hint">Rows above the header (instrument metadata etc.) are ignored. Tip: click a row in <b>Raw file</b> below the plot to use it as the header.</p>
-        </div>
-        <div class="row" id="sheetRow" hidden><label for="sheet">Sheet</label><select id="sheet"></select></div>
-        <div id="allsheetsRow" hidden>
-          <label class="check"><input type="checkbox" id="allsheets"> Combine all sheets into one table</label>
-          <div class="row"><label for="sheetcol">Sheet name column</label><input type="text" id="sheetcol" value="Sheet" title="Name of the column that holds each row's sheet name, e.g. Grain Orientation"></div>
-        </div>
-        <details class="sub" id="calcPanel">
-          <summary>Calculated columns</summary>
-          <p class="hint">Make a new column from others, e.g. <code>90 - `Angle from Horizontal`</code> or <code>Dpar / Dper</code>. Put names with spaces in `backticks`; <code>np.sin</code>, <code>np.degrees</code>, <code>np.abs</code> etc. work.</p>
-          <div id="calcList"></div>
-          <button type="button" id="calcAdd" class="ghost small">+ Add column</button>
-          <div class="err" id="calcErr"></div>
-        </details>
-            </details>
 
       <details class="sec" id="sec-plot" open>
         <summary>Plot <span class="badge" id="b-plot"></span></summary>
@@ -402,32 +323,95 @@
         <div class="row"><label for="panel">Panel label</label><input type="text" id="panel" data-cfg placeholder="e.g. (a)"></div>
             </details>
 
-      <details class="sec" id="sec-saved">
-        <summary>Saved plots &amp; settings <span class="badge" id="b-saved"></span></summary>
-        <div class="save-row">
-          <input type="text" id="saveName" placeholder="Name this plot">
-          <button type="button" id="saveBrowser" class="small" disabled>Save</button>
-        </div>
-        <div id="savedList" class="saved-list"></div>
-        <p class="hint" id="savedEmpty">Plots you save here (settings and data) stay in this browser. Your current plot is also kept automatically, so it reopens next time.</p>
-        <div class="actions">
-          <button type="button" id="newPlot" class="ghost small" title="Clear the current plot and data">New plot</button>
-          <button type="button" id="saveProject" class="ghost small" disabled title="One file with the settings and the data">Download project file</button>
-          <button type="button" id="openProject" class="ghost small" title="Open a .sciplot project, or a PNG/SVG/PDF exported from SciPlot">Open project or figure</button>
-          <input type="file" id="projectFile" accept=".sciplot,.json,.png,.svg,.pdf" hidden>
-        </div>
-              <div class="actions">
-        <button type="button" id="copyLink" class="ghost small">Copy link to these settings</button>
-        <button type="button" id="saveCfg" class="ghost small" title="Settings only, no data: reuse a style on other datasets">Save style</button>
-        <button type="button" id="loadCfg" class="ghost small">Apply style</button>
-        <input type="file" id="cfgFile" accept=".json" hidden>
-        <button type="button" id="reset" class="ghost small">Reset settings</button>
-              </div>
-      </details>
+      
     </aside>
 
     <section class="views">
       <div class="banner" id="banner" hidden><span id="bannerText"></span><button type="button" id="bannerFresh" class="ghost small">Start fresh</button><button type="button" id="bannerClose" class="ghost small" title="Dismiss">✕</button></div>
+      <div class="topcards">
+      <details class="sec card" id="sec-data" open>
+        <summary>Data <span class="badge" id="b-data"></span></summary>
+        <div class="card-body">
+        <div id="drop" class="drop" tabindex="0" role="button">
+          <strong>Drop a file here</strong> or click to choose<br>
+          <span class="hint">.csv .txt .dat .tsv .xlsx .xls · or a .sciplot project / exported figure</span>
+          <div id="fname" class="fname"></div>
+        </div>
+        <input type="file" id="file" accept=".csv,.txt,.dat,.tsv,.xlsx,.xlsm,.xls,.sciplot,.png,.svg,.pdf" hidden>
+        <div class="row">
+          <label for="example">Or try</label>
+          <select id="example">
+            <option value="">an example…</option>
+            <option value="examples/age-elevation.csv">Age–elevation profile (.csv)</option>
+            <option value="examples/raman-spectrum.txt">Raman spectrum (.txt)</option>
+            <option value="examples/track-lengths.xlsx">Track lengths (.xlsx, 2 sheets)</option>
+            <option value="examples/ahe-grains.csv">AHe single grains: eU, Rs, lithology (.csv)</option>
+            <option value="examples/instrument-export.csv">Instrument export with metadata header (.csv)</option>
+          </select>
+        </div>
+        <details class="sub">
+          <summary>Paste from Excel</summary>
+          <textarea id="paste" rows="5" placeholder="Copy cells in Excel (including the header row) and paste here"></textarea>
+          <button type="button" id="pasteLoad" class="small">Use pasted data</button>
+        </details>
+        <div class="row"><label for="header">Header row</label>
+          <select id="header"><option value="auto">Auto-detect</option><option value="yes">First row</option><option value="row">Choose row…</option><option value="no">None (no names)</option></select></div>
+        <div id="headerRows" hidden>
+          <div class="row"><label for="headerrow">Header is row</label><input type="number" id="headerrow" value="1" min="1"></div>
+          <div class="row"><label for="skipafter">Skip after it</label><input type="number" id="skipafter" value="0" min="0" title="Rows to skip straight after the header, e.g. a units row"></div>
+          <p class="hint">Rows above the header (instrument metadata etc.) are ignored. Tip: click a row in <b>Raw file</b> below the plot to use it as the header.</p>
+        </div>
+        <div class="row" id="sheetRow" hidden><label for="sheet">Sheet</label><select id="sheet"></select></div>
+        <div id="allsheetsRow" hidden>
+          <label class="check"><input type="checkbox" id="allsheets"> Combine all sheets into one table</label>
+          <div class="row"><label for="sheetcol">Sheet name column</label><input type="text" id="sheetcol" value="Sheet" title="Name of the column that holds each row's sheet name, e.g. Grain Orientation"></div>
+        </div>
+        <details class="sub" id="calcPanel">
+          <summary>Calculated columns</summary>
+          <p class="hint">Make a new column from others, e.g. <code>90 - `Angle from Horizontal`</code> or <code>Dpar / Dper</code>. Put names with spaces in `backticks`; <code>np.sin</code>, <code>np.degrees</code>, <code>np.abs</code> etc. work.</p>
+          <div id="calcList"></div>
+          <button type="button" id="calcAdd" class="ghost small">+ Add column</button>
+          <div class="err" id="calcErr"></div>
+        </details>
+                    </div>
+      </details>
+      <details class="sec card" id="sec-layout">
+        <summary>Figure layout <span class="badge" id="b-layout"></span></summary>
+        <div class="card-body cols">
+        <p class="hint" id="layoutHint">One panel. Use <b>+ Duplicate</b> or <b>+ Blank</b> above the plot to add panels; these settings then apply to the whole figure.</p>
+        <h3 class="subhead">Grid &amp; size</h3>
+        <div class="row"><label for="lay-cols">Columns</label>
+          <select id="lay-cols" data-lay><option value="">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+        <div class="row"><label for="lay-size">Figure width</label>
+          <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
+        <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
+        <div class="row"><label for="lay-aspect">Panel height ÷ width</label><input type="number" id="lay-aspect" data-lay value="0.75" min="0.2" max="3" step="0.05"></div>
+        <div class="row"><label for="lay-spacing" title="Automatic spacing between panels (0 = as tight as the labels allow)">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
+        <div class="row"><label for="lay-gapx" title="Extra gap between columns after the automatic layout, in mm. Negative pulls panels closer together (useful once inner labels are hidden).">Column gap ± mm</label><input type="number" id="lay-gapx" data-lay value="0" min="-30" max="30" step="0.5"></div>
+        <div class="row"><label for="lay-gapy" title="Extra gap between rows after the automatic layout, in mm. Negative pulls panels closer together.">Row gap ± mm</label><input type="number" id="lay-gapy" data-lay value="0" min="-30" max="30" step="0.5"></div>
+        <h3 class="subhead">Axes across panels</h3>
+        <div class="row"><label for="lay-sharex">Same X range</label>
+          <select id="lay-sharex" data-lay><option value="none">No</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
+        <div class="row"><label for="lay-sharey">Same Y range</label>
+          <select id="lay-sharey" data-lay><option value="none">No</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
+        <p class="hint">Only panels plotting the same variable on that axis are linked.</p>
+        <div class="row"><label for="lay-inner">Between panels</label>
+          <select id="lay-inner" data-lay><option value="keep">Keep all labels</option><option value="titles">Hide inner axis titles</option><option value="all">Hide inner titles and tick labels</option></select></div>
+        <div class="row"><label for="lay-mirrory">Y axis on right</label>
+          <select id="lay-mirrory" data-lay><option value="none">No</option><option value="right">Right-hand column</option><option value="all">All panels</option></select></div>
+        <div class="row"><label for="lay-mirrorx">X axis on top</label>
+          <select id="lay-mirrorx" data-lay><option value="none">No</option><option value="top">Top row</option><option value="all">All panels</option></select></div>
+        <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
+          <select id="lay-legend" data-lay><option value="each">Each panel</option><option value="right">One shared key, right</option><option value="below">One shared key, below</option></select></div>
+        <h3 class="subhead">Panel letters</h3>
+        <div class="row"><label for="lay-labels">Style</label>
+          <select id="lay-labels" data-lay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="a.">a.</option><option value="A">A</option><option value="(A)">(A)</option><option value="A)">A)</option><option value="none">None</option></select></div>
+        <div class="row"><label for="lay-labelpos">Position</label>
+          <select id="lay-labelpos" data-lay><option value="outside">Outside top-left</option><option value="inside">Inside top-left</option></select></div>
+        <p class="hint">A panel's own <i>Panel label</i> (Style → Legend &amp; labels) overrides its letter. Hide a panel's axes under Axes.</p>
+              </div>
+      </details>
+      </div>
       <div class="figpanel">
         <div class="panelbar" id="panelBar">
           <span class="pb-label">Panels</span>
@@ -473,6 +457,31 @@
         <p class="hint">Exported figures remember their setup: drop one back onto SciPlot to keep editing it.</p>
         <label class="check"><input type="checkbox" id="embedData"> Also store the data inside exported figures (bigger files; don't use for figures you send to journals if the data are private)</label>
       </div>
+
+      <details class="sec card" id="sec-saved">
+        <summary>Saved plots &amp; settings <span class="badge" id="b-saved"></span></summary>
+        <div class="card-body">
+        <div class="save-row">
+          <input type="text" id="saveName" placeholder="Name this plot">
+          <button type="button" id="saveBrowser" class="small" disabled>Save</button>
+        </div>
+        <div id="savedList" class="saved-list"></div>
+        <p class="hint" id="savedEmpty">Plots you save here (settings and data) stay in this browser. Your current plot is also kept automatically, so it reopens next time.</p>
+        <div class="actions">
+          <button type="button" id="newPlot" class="ghost small" title="Clear the current plot and data">New plot</button>
+          <button type="button" id="saveProject" class="ghost small" disabled title="One file with the settings and the data">Download project file</button>
+          <button type="button" id="openProject" class="ghost small" title="Open a .sciplot project, or a PNG/SVG/PDF exported from SciPlot">Open project or figure</button>
+          <input type="file" id="projectFile" accept=".sciplot,.json,.png,.svg,.pdf" hidden>
+        </div>
+              <div class="actions">
+        <button type="button" id="copyLink" class="ghost small">Copy link to these settings</button>
+        <button type="button" id="saveCfg" class="ghost small" title="Settings only, no data: reuse a style on other datasets">Save style</button>
+        <button type="button" id="loadCfg" class="ghost small">Apply style</button>
+        <input type="file" id="cfgFile" accept=".json" hidden>
+        <button type="button" id="reset" class="ghost small">Reset settings</button>
+              </div>
+              </div>
+      </details>
 
       <div id="msgs" class="msgs"></div>
       <div id="err" class="err"></div>
@@ -575,6 +584,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=25"></script>
+  <script type="module" src="app.js?v=26"></script>
 </body>
 </html>
