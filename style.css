@@ -156,7 +156,7 @@ details.sec { border-top: 1px solid var(--line); padding: 0.75rem 0 0.35rem; }
 details.sec:first-child { border-top: none; padding-top: 0; }
 details.sec > summary {
   list-style: none; cursor: pointer; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;
+  color: var(--link); font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;
 }
 details.sec > summary::-webkit-details-marker { display: none; }
 details.sec > summary::before { content: "▸"; font-size: 0.75rem; transition: transform .15s; }
@@ -229,7 +229,7 @@ table.raw tr.above td { color: #6e6e73; }
 /* collapsed-section summaries */
 details.sec > summary { flex-wrap: wrap; }
 details.sec > summary .badge { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 0.75rem;
-  color: var(--link); margin-left: auto; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  color: var(--muted); margin-left: auto; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 details.sec > summary .badge:empty { display: none; }
 details.sec[open] > summary .badge { color: var(--muted); }
 h3.subhead { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
