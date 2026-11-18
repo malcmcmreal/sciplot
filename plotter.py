@@ -821,7 +821,7 @@ def _ref_extra(ax, df, c, msgs, force_axis=None):
             if kind in ("sd1", "sd2"):
                 k = 1 if kind == "sd1" else 2
                 m, sd = float(np.mean(vals)), float(np.std(vals, ddof=1))
-                lines = [m - k * sd, m + k * sd]
+                lines = [m - k * sd, m, m + k * sd]        # the mean itself is drawn solid
                 desc = f"mean ± {k} SD = {_fmt_pm(m, k * sd)}"
             elif kind == "minmax":
                 lines = [float(vals.min()), float(vals.max())]
@@ -841,10 +841,12 @@ def _ref_extra(ax, df, c, msgs, force_axis=None):
         else:
             draw = ax.axhline if axis == "y" else ax.axvline
         label = f"{item.get('label') or col}: {desc}"
+        lw = _num(c.get("refwidth")) or 0.9
         for i, q in enumerate(lines):
             if np.isfinite(q):
-                draw(q, color=rc, linestyle=ls, linewidth=_num(c.get("refwidth")) or 0.9, zorder=3,
-                     label=label if (i == 0 and c.get("reflegend", True)) else None)
+                centre = kind in ("sd1", "sd2") and i == 1
+                draw(q, color=rc, linestyle="-" if centre else ls, linewidth=lw * (1.2 if centre else 1),
+                     zorder=3, label=label if (i == 0 and c.get("reflegend", True)) else None)
         msgs.append(label)
 
 
@@ -1335,6 +1337,14 @@ def _hist_edges(vals, c):
     return np.histogram_bin_edges(allv[(allv >= lo) & (allv <= hi)], bins="auto", range=(lo, hi))
 
 
+def _kde_style(c, default):
+    """KDE line colour, width and style (Plot type → KDE line)."""
+    col = c.get("kdecolor") or ""
+    col = (c.get("kdecustom") or "#000000") if col == "custom" else (col or default)
+    lw = _num(c.get("kdewidth")) or c.get("linewidth", 1.2)
+    return col, lw, LINESTYLES.get(c.get("kdels") or "-", "-")
+
+
 def _kde_curve(v, edges, bw_adjust, scale):
     v = np.asarray(v, float)
     if len(v) < 2 or np.std(v) == 0:
@@ -1394,8 +1404,8 @@ def _hist(ax, fig, df, c, series, colors, msgs):
             scale = 1.0 if density else counts.sum() * widths.mean()
             xs, ys = _kde_curve(v.values, edges, _num(c.get("bw")) or 1, scale)
             if xs is not None:
-                ax.plot(xs, ys, color=col if not colorby else "black",
-                        linewidth=c.get("linewidth", 1.2), zorder=3)
+                kc, klw, kls = _kde_style(c, col if not colorby else "black")
+                ax.plot(xs, ys, color=kc, linewidth=klw, linestyle=kls, zorder=3)
         if any(c.get(k) for k in ("refmean", "refmedian")) and len(v) and c.get("refaxis", "y") != "none":
             prefix = f"{lbl}: " if len(series) > 1 else ""
             _ref_lines(ax, v.values, None, {**c, "refwmean": False},
@@ -1435,8 +1445,9 @@ def _distribution(ax, df, c, series, colors, xcol, msgs):
             if y.nunique() < 2:
                 msgs.append(f"{s['y']}: not enough distinct values for a KDE")
                 continue
-            sns.kdeplot(x=y, ax=ax, color=colors[i], fill=c.get("kdefill", True),
-                        alpha=0.25 if c.get("kdefill", True) else 1, linewidth=c.get("linewidth", 1.2),
+            kc, klw, kls = _kde_style(c, colors[i])
+            sns.kdeplot(x=y, ax=ax, color=kc, fill=c.get("kdefill", True), linestyle=kls,
+                        alpha=0.25 if c.get("kdefill", True) else 1, linewidth=klw,
                         bw_adjust=_num(c.get("bw")) or 1, label=s.get("label") or s["y"])
             if c.get("rug"):
                 sns.rugplot(x=y, ax=ax, color=colors[i], height=0.04, linewidth=0.6)
