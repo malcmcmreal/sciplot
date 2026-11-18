@@ -152,9 +152,17 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, a
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     headerrow = max(1, int(headerrow or 1))
     sheets = []
+    DATA["tables"] = {}
     if ext in ("xlsx", "xlsm", "xls", "ods"):
         xl = pd.ExcelFile(path)
         sheets = xl.sheet_names
+        for sh in sheets:          # every sheet is also available as a source for extra series
+            try:
+                f = _sheet_frame(xl, sh, "auto", 1, 0)
+                if f is not None:
+                    DATA["tables"][sh] = _coerce(f)
+            except Exception:
+                pass
         sheet = sheet if sheet in sheets else sheets[0]
         raw = xl.parse(sheet, header=None)
         raw_rows = [[i + 1, "  |  ".join(_fmt_cell(v) for v in r if not (isinstance(v, float) and np.isnan(v)))]
@@ -283,6 +291,11 @@ def _finish_load(df, raw_rows, sheets, sheet, skipped, keep_base=False, calc_msg
         "sheet": sheet,
         "skipped_sheets": skipped,
         "calc_errors": calc_msgs or [],
+        "table_order": list(DATA.get("tables", {}).keys()),
+        "tables": {k: {"columns": list(v.columns),
+                       "numeric": [bool(pd.api.types.is_numeric_dtype(v[c])) for c in v.columns],
+                       "nrows": int(len(v))}
+                   for k, v in DATA.get("tables", {}).items()},
     })
 
 
@@ -671,7 +684,7 @@ def _polar_finish(ax, c, df, series, xl, yl):
     # radial range
     lo, hi = _num(c.get("ymin")), _num(c.get("ymax"))
     if lo is None:
-        ys = pd.concat([pd.to_numeric(df[s["y"]], errors="coerce") for s in series])
+        ys = pd.concat([pd.to_numeric(_series_df(s, df)[s["y"]], errors="coerce") for s in series])
         lo = 0.0 if ys.min() >= 0 else None
     ax.set_ylim(bottom=lo, top=hi)
     if c.get("ylog"):
@@ -768,7 +781,83 @@ def _vectors(ax, px, y, idx, df, c, mapping, col, alpha):
 
 
 # ----------------------------------------------------------------- x–y
-def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
+T95 = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160,
+       2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056,
+       2.052, 2.048, 2.045, 2.042]
+
+
+def _t95(dof):
+    return T95[dof - 1] if 1 <= dof <= 30 else 1.96 + 2.4 / max(dof, 1)
+
+
+def _mode_kde(v):
+    v = np.asarray(v, float)
+    if len(v) < 3 or np.std(v) == 0:
+        return float(np.median(v))
+    bw = 1.06 * np.std(v, ddof=1) * len(v) ** (-1 / 5)
+    xs = np.linspace(v.min(), v.max(), 512)
+    dens = np.exp(-0.5 * ((xs[:, None] - v[None, :]) / bw) ** 2).sum(1)
+    return float(xs[np.argmax(dens)])
+
+
+def _group_summary(ax, df, c, x, y, xc, x_numeric, col, prefix, tx, msgs, out):
+    """One point per group (default: each X value) at the group's mean/median/mode,
+    with SD / SE / 95% CI / IQR / range bars."""
+    gcol = c.get("groupby") if _ok(c.get("groupby")) and c.get("groupby") in df.columns else xc
+    keys = df.loc[y.index, gcol] if gcol else x
+    stat = c.get("groupstat", "mean")
+    spread = c.get("groupspread", "sd")
+    rows = []
+    for k, idx in pd.Series(y.index, index=y.index).groupby(keys.values, sort=True):
+        yy = y.loc[idx.values].astype(float).values
+        if not len(yy):
+            continue
+        gx = float(k) if (gcol == xc and x_numeric) else (float(x.loc[idx.values].astype(float).mean())
+                                                          if x_numeric else str(k))
+        n = len(yy)
+        mean, med = float(np.mean(yy)), float(np.median(yy))
+        sd = float(np.std(yy, ddof=1)) if n > 1 else np.nan
+        se = sd / np.sqrt(n) if n > 1 else np.nan
+        centre = {"mean": mean, "median": med, "mode": _mode_kde(yy)}[stat]
+        q1, q3 = np.percentile(yy, [25, 75])
+        lo, hi = {"sd": (centre - sd, centre + sd), "se": (centre - se, centre + se),
+                  "ci95": (centre - _t95(n - 1) * se, centre + _t95(n - 1) * se) if n > 1 else (np.nan, np.nan),
+                  "iqr": (q1, q3), "range": (yy.min(), yy.max()),
+                  "none": (centre, centre)}[spread]
+        rows.append(dict(group=k, x=gx, n=n, centre=centre, lo=float(lo), hi=float(hi), mean=mean,
+                         median=med, sd=sd, se=se, q1=float(q1), q3=float(q3), min=float(yy.min()),
+                         max=float(yy.max())))
+    if not rows:
+        return
+    gx = [r["x"] for r in rows]
+    gy = np.array([r["centre"] for r in rows])
+    lo = np.array([r["lo"] for r in rows])
+    hi = np.array([r["hi"] for r in rows])
+    yerr = None if spread == "none" else np.vstack([np.nan_to_num(gy - lo), np.nan_to_num(hi - gy)])
+    gc = c.get("groupcolor") or ""
+    gcolr = col if gc == "series" else (gc or "white")   # white markers read on any cloud of points
+    lcol = col if gc == "series" else (gc or "black")
+    ms = _num(c.get("groupsize")) or (c.get("markersize", 4) * 1.8)
+    names = {"sd": "± 1 SD", "se": "± 1 SE", "ci95": "± 95% CI", "iqr": "(IQR)", "range": "(range)", "none": ""}
+    label = f"{prefix + ': ' if prefix else ''}{stat} {names[spread]}".strip()
+    px = tx(np.asarray(gx, float)) if x_numeric else gx
+    ax.errorbar(px, gy, yerr=yerr, fmt="-" if c.get("groupline", True) else "none",
+                color=lcol, ecolor="black", elinewidth=1.0, capsize=3, linewidth=1.2, zorder=5)
+    ax.plot(px, gy, linestyle="none", marker=c.get("groupmarker", "D"), markersize=ms,
+            markerfacecolor=gcolr, markeredgecolor="black", markeredgewidth=0.9, zorder=6)
+    ax.plot([], [], linestyle="-" if c.get("groupline", True) else "none", color=lcol,
+            marker=c.get("groupmarker", "D"), markersize=min(ms, 7), markerfacecolor=gcolr,
+            markeredgecolor="black", markeredgewidth=0.9, label=label)     # legend key
+    for r in rows:
+        r["series"] = prefix or ""
+        r["groupby"] = gcol or "row"
+        r["statistic"] = stat
+        r["spread"] = spread
+    out.extend(rows)
+    msgs.append(f"{label}: {len(rows)} groups by {gcol or 'X'} (download the table under Export)")
+
+
+def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=None):
     kind = c.get("kind", "scatter")
     excluded = set(int(r) for r in c.get("excluded", []))
     open_m = c.get("markerfill", "filled") == "open"
@@ -786,20 +875,28 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
     if not mapped and any(_ok(c.get(k)) for k in ("hue", "sizeby", "styleby")) and kind in ("line", "step"):
         msgs.append("Colour/size/shape mapping applies to scatter and line + marker plots")
 
+    main_df = df
     for i, s in enumerate(series):
+        main = not s.get("source")
+        df = main_df if main else _series_df(s, main_df)
+        xc = xcol if main else (s.get("x") if s.get("x") in df.columns else None)
         y = pd.to_numeric(df[s["y"]], errors="coerce")
-        if xcol:
-            x = df[xcol]
+        if xc:
+            x = df[xc]
             x_numeric = pd.api.types.is_numeric_dtype(x)
         else:
             x, x_numeric = pd.Series(np.arange(1, len(df) + 1), index=df.index), True
+        if polar and not x_numeric:
+            raise ValueError(f"The angle (X) column of series {s['y']} must be numeric.")
         yerr = pd.to_numeric(df[s["yerr"]], errors="coerce") if s.get("yerr") in df.columns else None
         xerr = pd.to_numeric(df[s["xerr"]], errors="coerce") if s.get("xerr") in df.columns else None
         valid = y.notna() & (x.notna() if x_numeric else True)
-        excl = valid & df.index.isin(excluded)
+        excl = valid & df.index.isin(excluded) if main else valid & False
         mask = valid & ~excl
         col = colors[i]
         lbl = s.get("label") or s["y"]
+        ms_s = _num(s.get("size")) or ms
+        alpha_s = _num(s.get("alpha")) or alpha
         mk = s.get("marker") if s.get("marker") not in (None, "", "auto") else \
             (MARKERS[i % len(MARKERS)] if vary_m else "o")
         ls = LINESTYLES.get(s.get("ls") or "-", "-")
@@ -811,7 +908,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
             xj = x.astype(float) + (jrng.uniform(-jitter, jitter, len(x)) if jitter else 0)
             xj = xj.clip(ax._sp_amin, ax._sp_amax) if jitter else xj
             x_plot_all = pd.Series(np.asarray(tx(xj)), index=x.index)
-        if x_numeric:
+        if x_numeric and main:
             pp = {"label": lbl, "color": col,
                   "pts": [[int(r), float(x[r]), float(y[r]), bool(excl[r])] for r in df.index[valid]]}
             if polar:
@@ -830,7 +927,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
             xerr = xerr.iloc[order] if xerr is not None else None
 
         px = x_plot_all[x.index] if polar else x
-        vec = c.get("vector") and kind in ("scatter", "polar") and x_numeric
+        vec = c.get("vector") and kind in ("scatter", "polar") and x_numeric and main
         if vec:
             if yerr is not None or xerr is not None:
                 ax.errorbar(px, y, yerr=yerr, xerr=xerr, fmt="none", ecolor="0.6",
@@ -841,7 +938,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
             if lcol and i == 0:
                 extra.append((Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False),
                               f"line length ∝ {lcol} (longest = {ltop:.3g})"))
-        elif mapped:
+        elif mapped and main:
             neutral = "0.55" if mapping.hue else col
             if yerr is not None or xerr is not None:
                 ax.errorbar(px, y, yerr=yerr, xerr=xerr, fmt="none", ecolor=neutral,
@@ -870,7 +967,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
                     marker=None if mapping.style else mk, color=hcol,
                     markerfacecolor="white" if open_m else hcol, markersize=ms, label=lbl)
         else:
-            mstyle = dict(marker=mk, markeredgecolor=col,
+            mstyle = dict(marker=mk, markeredgecolor=col, markersize=ms_s,
                           markerfacecolor="white" if open_m else col, markeredgewidth=0.8)
             if kind in ("scatter", "polar"):
                 fmt = dict(linestyle="none", **mstyle)
@@ -881,10 +978,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
             else:
                 fmt = dict(linestyle=ls, marker="none")
             if yerr is not None or xerr is not None:
-                ax.errorbar(px, y, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha,
-                            elinewidth=0.7, label=lbl, zorder=2, **fmt)
+                ax.errorbar(px, y, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha_s,
+                            elinewidth=0.7, label=lbl, zorder=2 if main else 4, **fmt)
             else:
-                ax.plot(px, y, color=col, label=lbl, zorder=2, alpha=alpha, **fmt)
+                ax.plot(px, y, color=col, label=lbl, zorder=2 if main else 4, alpha=alpha_s, **fmt)
 
         # polynomial fit (+ optional seaborn confidence band)
         fit = int(s.get("fit") or 0)
@@ -926,6 +1023,11 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
                            c if (xerr is not None or axis == "x") else {**c, "refwmean": False},
                            col if axis == "x" else "0.35",
                            (prefix if axis == "x" else "") + ("X " if axis == "both" else ""), "x", msgs)
+
+        if c.get("groupstats") and main and len(y):
+            _group_summary(ax, df, c, x, y, xc, x_numeric, col, lbl if len(series) > 1 else "",
+                           tx, msgs, groups_out)
+    df = main_df
 
     if mapped:
         mapping.colorbar(fig, ax)
@@ -1180,12 +1282,24 @@ def _finish_legend(fig, ax, c, series, extra, kind, msgs, points):
     return fig, msgs, points
 
 
+def _series_df(s, df):
+    """The table a series draws from: the main table, or another sheet of the workbook."""
+    src = s.get("source") or ""
+    return DATA.get("tables", {}).get(src, pd.DataFrame()) if src else df
+
+
 def make_figure(c, df=None):
     df = DATA["df"] if df is None else df
     if df is None:
         raise ValueError("No data loaded.")
     msgs, points, extra = [], [], []
-    series = [s for s in c.get("series", []) if s.get("y") in df.columns]
+    groups = DATA.setdefault("groups", [])
+    groups.clear()
+    series = [s for s in c.get("series", []) if s.get("y") in _series_df(s, df).columns]
+    kind = c.get("kind", "scatter")
+    if any(s.get("source") for s in series) and kind not in ("scatter", "linemarkers", "line", "step", "polar"):
+        msgs.append("Series from other sheets are drawn in x–y and polar plots only")
+        series = [s for s in series if not s.get("source")] or series[:0]
     kind = c.get("kind", "scatter")
     size = FIG_SIZES.get(c.get("size", "single"), None)
     if size is None:
@@ -1215,7 +1329,7 @@ def make_figure(c, df=None):
         elif kind in ("kde", "box", "violin", "strip", "swarm"):
             _distribution(ax, df, c, series, colors, xcol, msgs)
         else:
-            _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra)
+            _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups)
         if polar:
             xl = c.get("xlabel") or (xcol or "Index")
             yl = c.get("ylabel") or (series[0]["y"] if len(series) == 1 else "")
@@ -1336,7 +1450,18 @@ def render(cfg_json, fmt="png", dpi=200, meta=""):
     return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
                        "geom": geom, "points": points,
                        "colors": [s.get("color") or pal[i] for i, s in enumerate(c.get("series", []))],
-                       "swatches": _colors(c.get("palette", "okabe-ito"), 8)})
+                       "swatches": _colors(c.get("palette", "okabe-ito"), 8),
+                       "ngroups": len(DATA.get("groups") or [])})
+
+
+def group_table_csv():
+    """The group summary from the last render, as CSV."""
+    rows = DATA.get("groups") or []
+    if not rows:
+        return ""
+    cols = ["series", "groupby", "group", "x", "n", "statistic", "centre", "spread", "lo", "hi",
+            "mean", "median", "sd", "se", "q1", "q3", "min", "max"]
+    return pd.DataFrame(rows)[cols].to_csv(index=False, float_format="%.6g")
 
 
 # ------------------------------------------------- standalone use (offline)

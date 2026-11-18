@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 8;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 9;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -158,7 +158,7 @@ let calcTimer = null;
 // calculated column named after the formula itself, so it is saved, shown in the data table and
 // in the Calculated columns panel.
 const colSelects = () => [$('x'), ...document.querySelectorAll('select[data-col]'),
-  ...document.querySelectorAll('.series .s-y, .series .s-yerr, .series .s-xerr')];
+  ...document.querySelectorAll('.series:not([data-source]) .s-y, .series:not([data-source]) .s-yerr, .series:not([data-source]) .s-xerr')];
 const calcRows = () => [...document.querySelectorAll('.calc-row')];
 const calcRowByName = (n) => calcRows().find((r) => r.querySelector('.c-name').value.trim() === n);
 
@@ -335,9 +335,11 @@ function fillColumnsInner(pref = {}) {
     const want = pref.cols && el.id in pref.cols ? pref.cols[el.id] : el.value;
     el.innerHTML = colOptions(cols.includes(want) ? want : '', 'none');
   }
+  if ($('groupby').options[0]) $('groupby').options[0].textContent = '(X values)';
   $('seriesList').innerHTML = '';
-  const keep = (pref.series || []).filter((s) => cols.includes(s.y));
-  if (keep.length) keep.forEach(addSeries);
+  const keep = (pref.series || []).filter((s) => (s.source
+    ? (info.tables?.[s.source]?.columns || []).includes(s.y) : cols.includes(s.y)));
+  if (keep.length) keep.forEach((s) => addSeries(s));
   else addSeries({ y: cols.find((c, i) => info.numeric[i] && c !== x) ?? cols[0] });
   updateVisibility();
 }
@@ -347,13 +349,26 @@ const MARKER_OPTS = [['auto', 'auto'], ['o', '● circle'], ['s', '■ square'],
   ['h', '⬢ hexagon'], ['p', '⬟ pentagon'], ['*', '★ star'], ['+', '+ plus'], ['x', '× cross'], ['.', '· point']]
   .map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
 
-function addSeries(s = {}) {
+function tableOptions(t, sel, blank) {
+  return (blank ? `<option value="">${blank}</option>` : '') +
+    t.columns.map((c) => `<option ${c === sel ? 'selected' : ''}>${esc(c)}</option>`).join('');
+}
+function addSeries(s = {}, replace = null) {
   const d = document.createElement('div');
   d.className = 'series';
+  const tables = info.tables || {};
+  const src = s.source && tables[s.source] ? s.source : '';
+  if (src) d.dataset.source = src;
+  const opts = src ? (sel, blank) => tableOptions(tables[src], sel, blank) : colOptions;
+  const srcRow = Object.keys(tables).length ? `<div class="row s-src"><label>Data from</label><select class="s-source">
+      <option value="">Main table</option>${(info.table_order || Object.keys(tables)).map((k) => `<option value="${esc(k)}" ${k === src ? 'selected' : ''}>Sheet: ${esc(k)}</option>`).join('')}
+    </select></div>` : '';
   d.innerHTML = `<button type="button" class="rm" title="Remove series">✕</button>
-    <div class="row"><label>Y</label><select class="s-y">${colOptions(s.y)}</select></div>
-    <div class="row s-err"><label>Y error</label><select class="s-yerr">${colOptions(s.yerr, 'none')}</select></div>
-    <div class="row s-err"><label>X error</label><select class="s-xerr">${colOptions(s.xerr, 'none')}</select></div>
+    ${srcRow}
+    ${src ? `<div class="row s-xrow"><label>X</label><select class="s-x">${opts(s.x)}</select></div>` : ''}
+    <div class="row"><label>Y</label><select class="s-y">${opts(s.y)}</select></div>
+    <div class="row s-err"><label>Y error</label><select class="s-yerr">${opts(s.yerr, 'none')}</select></div>
+    <div class="row s-err"><label>X error</label><select class="s-xerr">${opts(s.xerr, 'none')}</select></div>
     <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
     <div class="row s-fitrow"><label>Fit</label><select class="s-fit">
       <option value="0">None</option><option value="1">Linear</option><option value="2">Quadratic</option><option value="3">Cubic</option></select></div>
@@ -365,7 +380,24 @@ function addSeries(s = {}) {
       <div class="row s-markerrow"><label>Marker</label><select class="s-marker">${MARKER_OPTS}</select></div>
       <div class="row s-lsrow"><label>Line</label><select class="s-ls">
         <option value="-">solid</option><option value="--">dashed</option><option value=":">dotted</option><option value="-.">dash-dot</option></select></div>
+    </div>
+    <div class="row3 s-look">
+      <div class="row"><label>Size</label><input type="number" class="s-size" step="0.5" min="0.5" placeholder="auto" value="${esc(s.size ?? '')}"></div>
+      <div class="row"><label>Opacity</label><input type="number" class="s-alpha" step="0.05" min="0.05" max="1" placeholder="auto" value="${esc(s.alpha ?? '')}"></div>
     </div>`;
+  const srcSel = d.querySelector('.s-source');
+  if (srcSel) srcSel.addEventListener('change', (e) => {
+    e.stopPropagation();
+    const cur = seriesFrom(d);
+    const v = srcSel.value;
+    const t = v ? tables[v] : info;
+    const nums = t.columns.filter((c, i) => t.numeric[i]);
+    const next = v ? { source: v, x: nums[0] ?? t.columns[0], y: nums[1] ?? nums[0] ?? t.columns[0], size: 7, alpha: 1,
+      color: cur.color, marker: cur.marker === 'auto' ? 's' : cur.marker }
+      : { y: nums.find((c) => c !== $('x').value) ?? t.columns[0], color: cur.color, marker: cur.marker };
+    addSeries(next, d);
+    scheduleRender(0);
+  });
   d.querySelector('.s-fit').value = String(s.fit || 0);
   d.querySelector('.s-marker').value = s.marker || 'auto';
   d.querySelector('.s-ls').value = s.ls || '-';
@@ -385,7 +417,7 @@ function addSeries(s = {}) {
     if (document.querySelectorAll('.series').length > 1) { d.remove(); scheduleRender(); }
   });
   d.addEventListener('input', () => scheduleRender());
-  $('seriesList').appendChild(d);
+  if (replace) replace.replaceWith(d); else $('seriesList').appendChild(d);
   updateVisibility();
 }
 $('addSeries').addEventListener('click', () => {
@@ -397,7 +429,14 @@ $('addSeries').addEventListener('click', () => {
 });
 
 function getSeries() {
-  return [...document.querySelectorAll('.series')].map((d) => ({
+  return [...document.querySelectorAll('.series')].map(seriesFrom);
+}
+function seriesFrom(d) {
+  return ({
+    source: d.dataset.source || '',
+    x: d.querySelector('.s-x')?.value || '',
+    size: d.querySelector('.s-size').value,
+    alpha: d.querySelector('.s-alpha').value,
     y: d.querySelector('.s-y').value,
     yerr: d.querySelector('.s-yerr').value,
     xerr: d.querySelector('.s-xerr').value,
@@ -406,7 +445,7 @@ function getSeries() {
     color: d.querySelector('.s-color').dataset.set ? d.querySelector('.s-color').value : '',
     marker: d.querySelector('.s-marker').value,
     ls: d.querySelector('.s-ls').value,
-  }));
+  });
 }
 
 const DIST = new Set(['hist', 'kde', 'box', 'violin', 'strip', 'swarm']);
@@ -419,6 +458,10 @@ function updateVisibility() {
   const polar = k === 'polar';
   const mappable = k === 'scatter' || k === 'linemarkers' || polar;
   $('polarRows').hidden = !polar;
+  const xyk = ['scatter', 'linemarkers', 'line', 'step', 'polar'].includes(k);
+  $('groupRows').hidden = !xyk;
+  $('groupOpts').hidden = !$('groupstats').checked;
+  document.querySelectorAll('.series .s-src').forEach((el) => { el.hidden = !xyk; });
   $('polspanRow').hidden = $('polstyle').value !== 'quarter';
   $('vecRows').hidden = !$('vector').checked;
   $('histRows').hidden = !hist;
@@ -597,6 +640,7 @@ function renderPreview() {
     autoTimer = setTimeout(autoSave, 1200);
     $('saveBrowser').disabled = false;
     $('saveProject').disabled = false;
+    $('dlGroups').hidden = !r.ngroups;
   } catch (e) { showError(e); }
 }
 
@@ -611,6 +655,12 @@ document.querySelectorAll('[data-exp]').forEach((b) => b.addEventListener('click
     download(`${baseName()}.${fmt}`, new Blob([bin], { type: mime }));
   } catch (e) { showError(e); }
 }));
+$('dlGroups').addEventListener('click', () => {
+  try {
+    const csv = py.runPython('plotter.group_table_csv()');
+    download(`${baseName()}_group_summary.csv`, new Blob([csv], { type: 'text/csv' }));
+  } catch (e) { showError(e); }
+});
 $('dlScript').addEventListener('click', () => {
   const c = getConfig();
   c.dpi = +$('dpi').value;

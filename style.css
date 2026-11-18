@@ -205,3 +205,9 @@ table.raw tr.above td { color: #6e6e73; }
 .fx-box .fx-err { color: var(--fail); font-size: 0.75rem; font-family: var(--mono); }
 .fx-box .fx-err:empty { display: none; }
 .fx-box .fx-hint { color: var(--muted); font-size: 0.7rem; margin-top: 0.2rem; }
+
+.series .s-src { margin-bottom: 0.15rem; }
+.series[data-source] { border-style: dashed; border-left-style: solid; }
+.series .row3 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.5rem; }
+.series .row3 .row > label { flex-basis: 48px; }
+.series .row3 input { width: 100%; }

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -106,6 +106,21 @@
         <p class="hint" id="groupHint" hidden>Choose a text column to split one series into groups, or leave as “(series)” to compare the Y series side by side.</p>
         <div id="seriesList"></div>
         <button type="button" id="addSeries" class="ghost small">+ Add series</button>
+        <div id="groupRows">
+          <label class="check"><input type="checkbox" id="groupstats" data-cfg> Group summary (mean / median per group)</label>
+          <div id="groupOpts" hidden>
+            <div class="row"><label for="groupby">Group by</label><select id="groupby" data-cfg data-col></select></div>
+            <div class="row"><label for="groupstat">Statistic</label>
+              <select id="groupstat" data-cfg><option value="mean">Mean</option><option value="median">Median</option><option value="mode">Mode (peak of density)</option></select></div>
+            <div class="row"><label for="groupspread">Error bars</label>
+              <select id="groupspread" data-cfg><option value="sd">± 1 SD</option><option value="se">± 1 SE</option><option value="ci95">± 95% CI</option><option value="iqr">Interquartile range</option><option value="range">Min – max</option><option value="none">None</option></select></div>
+            <div class="row"><label for="groupcolor">Colour</label>
+              <select id="groupcolor" data-cfg><option value="">White, black outline</option><option value="series">Series colour</option><option value="#BE5103">Orange</option><option value="black">Black</option><option value="#0072B2">Blue</option></select></div>
+            <div class="row"><label for="groupsize">Marker size</label><input type="number" id="groupsize" data-cfg value="7" min="1" step="0.5"></div>
+            <label class="check"><input type="checkbox" id="groupline" data-cfg checked> Join groups with a line</label>
+            <p class="hint">Uses the main table's series. Group by “X values” gives one point per X (e.g. per grain orientation after combining sheets). The full table can be downloaded under Export.</p>
+          </div>
+        </div>
         <div id="polarRows" hidden>
           <div class="row"><label for="polstyle">Polar style</label>
             <select id="polstyle" data-cfg>
@@ -361,6 +376,7 @@
           <button type="button" data-exp="png" disabled>PNG</button>
           <label class="inline">at <select id="dpi"><option>300</option><option selected>600</option><option>1200</option></select> dpi</label>
           <span class="spacer"></span>
+          <button type="button" id="dlGroups" class="ghost" hidden>Group summary (CSV)</button>
           <button type="button" id="dlScript" class="ghost" disabled title="plotter.py plus a settings file that rebuilds this figure in Python">Download Python + settings</button>
         </div>
         <p class="hint">PDF embeds TrueType fonts; SVG keeps text editable in Illustrator or Inkscape. The figure is exactly the size chosen in Style.</p>
@@ -388,6 +404,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=9"></script>
+  <script type="module" src="app.js?v=10"></script>
 </body>
 </html>
