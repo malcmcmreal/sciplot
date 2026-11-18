@@ -586,8 +586,7 @@ class Mapping:
             return None
         if self.hue and self.hue["continuous"]:
             sm = matplotlib.cm.ScalarMappable(norm=self.hue["norm"], cmap=self.hue["cmap"])
-            cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25,
-                              shrink=0.7 if ax.name == "polar" else 1.0, extend=self._extend())
+            cb = _colorbar(fig, ax, sm, self.c, extend=self._extend())
             cb.set_label(self.c.get("huelabel") or self.hue["col"])
             if isinstance(self.hue["norm"], matplotlib.colors.LogNorm):
                 cb.ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(subs=(1, 2, 5)))
@@ -596,6 +595,20 @@ class Mapping:
             cb.outline.set_linewidth(0.6)
             return cb
         return None
+
+
+def _colorbar(fig, ax, sm, c, extend="neither"):
+    """A colour bar beside one panel. With a length / thickness set (Colour section) it is
+    sized relative to the panel's own plot area, so it follows a panel with a fixed aspect."""
+    ln, th = _num(c.get("cbarlen")), _num(c.get("cbarwid"))
+    polar = ax.name == "polar"
+    if ln or th:
+        ln = min(max((ln or (70 if polar else 100)) / 100, 0.05), 1.0)
+        th = min(max((th or 4) / 100, 0.005), 0.5)
+        cax = ax.inset_axes([1.0 + (0.14 if polar else 0.03), (1 - ln) / 2, th, ln])
+        return fig.colorbar(sm, cax=cax, extend=extend)
+    return fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25,
+                        shrink=0.7 if polar else 1.0, extend=extend)
 
 
 # ---------------------------------------------------------- reference lines
@@ -1291,7 +1304,7 @@ def _hist(ax, fig, df, c, series, colors, msgs):
             ax.bar(edges[:-1], h, width=widths, align="edge", color=fc, edgecolor=ec,
                    linewidth=0.5, label=lbl, zorder=2)
             sm = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
-            cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25)
+            cb = _colorbar(fig, ax, sm, c)
             cb.set_label(c.get("huelabel") or f"{c.get('histstat', 'mean')} {colorby}")
             cb.outline.set_linewidth(0.6)
         elif len(series) == 1 or c.get("histmulti", "step") == "overlay":
@@ -1854,11 +1867,12 @@ def _shared_key(fig, axes, mode, base):
         lab = key[1]
         sm = matplotlib.cm.ScalarMappable(norm=m.hue["norm"], cmap=m.hue["cmap"])
         if len(group) == 1 and len(cbars) > 1:
-            cb = fig.colorbar(sm, ax=group[0], pad=0.02, fraction=0.05, aspect=25,
-                              shrink=0.7 if group[0].name == "polar" else 1.0, extend=m._extend())
+            cb = _colorbar(fig, group[0], sm, m.c, extend=m._extend())
         else:
+            ln, th = _num(base.get("cbarlen")), _num(base.get("cbarwid"))
             cb = fig.colorbar(sm, ax=group if len(cbars) > 1 else axes, location=loc, pad=0.02,
-                              fraction=0.04, aspect=35, shrink=0.8, extend=m._extend())
+                              fraction=0.04, aspect=max(5, 140 / th) if th else 35,
+                              shrink=min(1.0, ln / 100) if ln else 0.8, extend=m._extend())
         cb.set_label(lab)
         if isinstance(m.hue["norm"], matplotlib.colors.LogNorm):
             cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
