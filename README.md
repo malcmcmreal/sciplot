@@ -38,6 +38,17 @@ Live: https://malcmcmreal.github.io/sciplot/
   - **Save style / Apply style** keep settings only, for reusing a look on other data; **Copy link** puts the settings in the URL.
   - Everything stays on your computer – nothing is uploaded.
 
+## Subsampling tab
+
+A second tab for "how many measurements do I need?" figures. Values are drawn in a random order (without replacement) and the plot shows the **running mean** or **running 2σ** (2 × sample SD) of the first *n* as measurements are added:
+
+- reference line for the full selection (mean ± 1 SD, or 2σ), and the expected 95% spread for a sample of *n* (± 2·SD/√n for the mean; σ/√(2(n−1)) normal approximation for 2σ), both with a finite-population correction;
+- filters: a subset (e.g. *Grain Orientation* = 10 after combining sheets, or another sheet), an angle range and a Dpar range – with a dash-dot line showing the value *before* the Dpar cut so any bias is visible;
+- seed / new random order, ghost runs (other random orders) with the median and 90th-percentile *n* needed to stay within ±tolerance % of the full-data value, smoothing of the connecting line, readout box;
+- an *n* slider and Play button to watch the run build up; export as PDF/SVG/PNG (reopens this tab) and the running values as CSV.
+
+It uses the data loaded on the Plot tab, including combined sheets and calculated columns, and is saved with the plot.
+
 ## Reproducing a figure offline
 
 **Download Python + settings** saves `plotter.py` plus a `*_plot.json` settings file. With numpy, pandas, matplotlib, seaborn and openpyxl installed:

@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 9;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 10;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -102,6 +102,8 @@ async function loadData(sheet = null) {
     $('sheetRow').hidden = !info.sheets.length || ($('allsheets').checked && info.sheets.length > 1);
     $('sheet').innerHTML = info.sheets.map((s) => `<option ${s === info.sheet ? 'selected' : ''}>${esc(s)}</option>`).join('');
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
+    fillSS();
+    if (currentView === 'ss') ssSchedule(0);
     showRaw();
     pending = null;
     showTable();
@@ -282,6 +284,7 @@ function applyCalc() {
     const keep = { x: $('x').value, series: getSeries(), cols: Object.fromEntries([...document.querySelectorAll('select[data-col]')].map((e) => [e.id, e.value])) };
     applyCalcPy();
     fillColumns(keep);
+    fillSS();
     showTable();
     scheduleRender(0);
   } catch (e) { showError(e); }
@@ -519,6 +522,8 @@ function getConfig({ withExcluded = true } = {}) {
   c.series = getSeries();
   c.header = $('header').value;
   c.allsheets = $('allsheets').checked;
+  c.ss = ssConfig();
+  c.view = currentView;
   c.sheetcol = $('sheetcol').value;
   c.calc = getCalc();
   c.headerrow = +$('headerrow').value || 1;
@@ -538,6 +543,8 @@ function applyConfig(c) {
   }
   if (c.header) $('header').value = c.header;
   if ('allsheets' in c) $('allsheets').checked = !!c.allsheets;
+  if (c.ss) applySS(c.ss);
+  if (c.view) setView(c.view);
   if (c.sheetcol) $('sheetcol').value = c.sheetcol;
   if (Array.isArray(c.calc)) { $('calcList').innerHTML = ''; c.calc.forEach(addCalcRow); if (c.calc.length) $('calcPanel').open = true; }
   if (c.headerrow) $('headerrow').value = c.headerrow;
@@ -1058,10 +1065,181 @@ async function startFresh() {
 $('bannerFresh').addEventListener('click', startFresh);
 $('newPlot').addEventListener('click', startFresh);
 
+// ---------------------------------------------------------------- Subsampling tab
+// Running mean / running 2σ of values drawn in a random order (how many measurements are enough?).
+let currentView = 'plot';
+let ssPending = null;          // settings waiting for data
+let ssFollow = true;           // slider follows the last value (show the full run)
+let ssLast = null, ssTimer = null, ssPlaying = false, ssTolTouched = false;
+let ssTouched = new Set();     // column menus the user has set (others get sensible defaults)
+const SS_DEFAULT = { mean: /^dpar$/i, '2sd': /angle.*c/i };
+
+function setView(v) {
+  currentView = v === 'ss' ? 'ss' : 'plot';
+  $('plotView').hidden = currentView !== 'plot';
+  $('ssView').hidden = currentView !== 'ss';
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.view === currentView));
+  if (currentView === 'ss') ssSchedule(0);
+}
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  setView(b.dataset.view);
+  clearTimeout(autoTimer); autoTimer = setTimeout(autoSave, 800);
+}));
+
+function ssConfig() {
+  const o = {};
+  document.querySelectorAll('[data-ss]').forEach((el) => {
+    o[el.id.slice(3)] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  o.n = ssFollow ? 1e9 : +$('ss-n').value;
+  o.touched = [...ssTouched];
+  return o;
+}
+function applySS(o) {
+  document.querySelectorAll('[data-ss]').forEach((el) => {
+    const k = el.id.slice(3);
+    if (!(k in o) || el.tagName === 'SELECT') return;
+    if (el.type === 'checkbox') el.checked = !!o[k]; else el.value = o[k];
+  });
+  ['mode', 'size', 'runcolor', 'legend', 'readoutpos'].forEach((k) => { if (k in o) $('ss-' + k).value = o[k]; });
+  ssTouched = new Set(o.touched || []);
+  ssFollow = !(o.n && o.n < 1e9);
+  if (!ssFollow) $('ss-n').value = o.n;
+  ssPending = o;
+  if (info) fillSS(o);
+}
+
+function ssTable() {
+  const src = $('ss-source').value;
+  return src && info?.tables?.[src] ? info.tables[src] : info;
+}
+function ssOptions(sel, list, want, blank) {
+  sel.innerHTML = (blank ? `<option value="">${blank}</option>` : '') +
+    list.map((c) => `<option ${c === want ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  sel.value = list.includes(want) ? want : (blank ? '' : list[0] ?? '');
+}
+function fillSS(pref) {
+  if (!info) return;
+  // before the menus have ever been filled, treat column choices as "not chosen yet"
+  pref = pref || ssPending || ($('ss-value').options.length ? ssConfig() : { mode: $('ss-mode').value });
+  ssPending = null;
+  $('ssNoData').hidden = true;
+  const order = info.table_order || Object.keys(info.tables || {});
+  $('ss-source').innerHTML = '<option value="">Main table</option>' +
+    order.map((k) => `<option value="${esc(k)}">Sheet: ${esc(k)}</option>`).join('');
+  $('ss-source').value = order.includes(pref.source) ? pref.source : '';
+  $('ssSourceRow').hidden = !order.length;
+  const t = ssTable();
+  const nums = t.columns.filter((c, i) => t.numeric[i]);
+  const mode = pref.mode || $('ss-mode').value;
+  const dflt = nums.find((c) => SS_DEFAULT[mode].test(c)) ?? nums[0];
+  const pick = (k, list, auto) => (ssTouched.has(k) && (pref[k] === '' || list.includes(pref[k])) ? pref[k] : auto);
+  ssOptions($('ss-value'), nums, ssTouched.has('value') && nums.includes(pref.value) ? pref.value : dflt);
+  ssOptions($('ss-anglecol'), nums, pick('anglecol', nums, nums.find((c) => /angle.*c/i.test(c)) ?? ''), 'none');
+  ssOptions($('ss-dparcol'), nums, pick('dparcol', nums, nums.find((c) => /^dpar$/i.test(c)) ?? ''), 'none');
+  const sheetcol = $('allsheets').checked && !$('ss-source').value ? ($('sheetcol').value || 'Sheet') : '';
+  ssOptions($('ss-wherecol'), t.columns, pick('wherecol', t.columns, t.columns.includes(sheetcol) ? sheetcol : ''), '(all rows)');
+  fillWhereVals(pref.whereval);
+  ssVisibility();
+}
+function fillWhereVals(want) {
+  const col = $('ss-wherecol').value;
+  $('ssWhereValRow').hidden = !col;
+  if (!col || !py) { $('ss-whereval').innerHTML = ''; return; }
+  const vals = JSON.parse(py.runPython(`plotter.ss_unique(${JSON.stringify(col)}, ${JSON.stringify($('ss-source').value)})`));
+  ssOptions($('ss-whereval'), vals, vals.includes(String(want)) ? String(want) : vals[0]);
+}
+function ssVisibility() {
+  $('ssSdRow').hidden = $('ss-mode').value !== 'mean';
+}
+
+function ssSchedule(d = 150) { clearTimeout(ssTimer); ssTimer = setTimeout(ssRender, d); }
+function ssRender() {
+  if (!py || !info || currentView !== 'ss') return;
+  $('ssErr').textContent = '';
+  try {
+    const r = pyCall('plotter.subsample_render(_args[0], "png", 160)', [JSON.stringify(getConfig())]);
+    ssLast = r;
+    const s = $('ss-n');
+    s.min = r.start; s.max = Math.max(r.N, r.start + 1);
+    if (ssFollow) s.value = s.max;
+    $('ssNval').textContent = r.N ? `n = ${r.n} of ${r.N}` : '';
+    const img = $('ssFig');
+    img.onload = () => { img.style.width = Math.round(img.naturalWidth / 160 * 130) + 'px'; };
+    img.src = 'data:image/png;base64,' + r.data;
+    $('ssStage').classList.add('show');
+    $('ssPlaceholder').hidden = true;
+    $('ssMsgs').textContent = r.msgs.join('\n');
+    clearTimeout(autoTimer); autoTimer = setTimeout(autoSave, 1200);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(getConfig({ withExcluded: false }))); } catch {}
+  } catch (e) { $('ssErr').textContent = String(e?.message ?? e).split('\n').filter(Boolean).slice(-2).join('\n'); }
+}
+
+document.querySelectorAll('[data-ss]').forEach((el) => {
+  el.addEventListener(el.type === 'text' || el.type === 'number' ? 'input' : 'change', () => {
+    const k = el.id.slice(3);
+    if (k === 'tol') ssTolTouched = true;
+    if (el.tagName === 'SELECT') ssTouched.add(k);
+    if (k === 'source') { fillSS({ ...ssConfig(), value: undefined, wherecol: undefined, whereval: undefined }); }
+    if (k === 'wherecol') fillWhereVals();
+    if (k === 'mode') {
+      const t = ssTable();
+      const nums = t.columns.filter((c, i) => t.numeric[i]);
+      const d = nums.find((c) => SS_DEFAULT[el.value].test(c));
+      if (d) $('ss-value').value = d;
+      if (!ssTolTouched) $('ss-tol').value = el.value === 'mean' ? 2 : 10;
+      ssVisibility();
+    }
+    ssSchedule(k === 'seed' || k === 'ghosts' ? 250 : 120);
+  });
+});
+$('ss-n').addEventListener('input', () => {
+  ssFollow = +$('ss-n').value >= +$('ss-n').max;
+  ssSchedule(30);
+});
+$('ssNewOrder').addEventListener('click', () => { $('ss-seed').value = Math.floor(Math.random() * 1e6); ssSchedule(0); });
+$('ssPlay').addEventListener('click', async () => {
+  if (ssPlaying) { ssPlaying = false; return; }
+  if (!ssLast?.N) return;
+  ssPlaying = true;
+  $('ssPlay').textContent = '❚❚ Pause';
+  const s = $('ss-n'), N = ssLast.N;
+  let n = +s.value >= N ? +s.min : +s.value;
+  const step = Math.max(1, Math.ceil(N / 90));     // ~90 frames for a full run
+  ssFollow = false;
+  while (ssPlaying && n < N) {
+    n = Math.min(N, n + step);
+    s.value = n;
+    ssRender();
+    await new Promise((res) => setTimeout(res, +$('ssSpeed').value));
+  }
+  ssPlaying = false;
+  ssFollow = +s.value >= N;
+  $('ssPlay').textContent = '▶ Play';
+});
+document.querySelectorAll('[data-ssexp]').forEach((b) => b.addEventListener('click', () => {
+  const fmt = b.dataset.ssexp;
+  try {
+    const meta = 'SciPlot1:' + b64utf8(JSON.stringify(buildProject({ withData: $('embedData').checked, base64: true }))) + '!';
+    const r = pyCall(`plotter.subsample_render(_args[0], "${fmt}", ${+$('dpi').value}, _args[1])`, [JSON.stringify(getConfig()), meta]);
+    const bin = Uint8Array.from(atob(r.data), (ch) => ch.charCodeAt(0));
+    const mime = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' }[fmt];
+    download(`${baseName()}_running_${$('ss-mode').value}.${fmt}`, new Blob([bin], { type: mime }));
+  } catch (e) { $('ssErr').textContent = String(e); }
+}));
+$('ssCsv').addEventListener('click', () => {
+  try {
+    py.globals.set('_args', py.toPy([JSON.stringify(getConfig())]));
+    const csv = py.runPython('plotter.subsample_csv(_args[0])');
+    download(`${baseName()}_running_${$('ss-mode').value}.csv`, new Blob([csv], { type: 'text/csv' }));
+  } catch (e) { $('ssErr').textContent = String(e); }
+});
+
 // ---------------------------------------------------------------- start-up
 DEFAULTS = getConfig({ withExcluded: false });
 delete DEFAULTS.series;
 delete DEFAULTS.x;
+['source', 'value', 'anglecol', 'dparcol', 'wherecol', 'whereval'].forEach((k) => delete DEFAULTS.ss[k]);
 (async () => {
   // a shared settings link wins; otherwise reopen the last plot (with its data); otherwise last settings
   const m = location.hash.match(/s=([\w-]+)/);

@@ -6,19 +6,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
   <header class="top">
-    <div>
-      <h1>SciPlot</h1>
-      <p class="tag">Publication-ready plots from CSV, TXT or Excel files, made with matplotlib and seaborn in your browser. Your data never leaves your computer.</p>
+    <div class="brand">
+      <div>
+        <h1>SciPlot</h1>
+        <p class="tag">Publication-ready plots from CSV, TXT or Excel files, made with matplotlib and seaborn in your browser. Your data never leaves your computer.</p>
+      </div>
+      <nav class="tabs" aria-label="Views">
+        <button type="button" data-view="plot" class="on">Plot</button>
+        <button type="button" data-view="ss" title="Running mean / running 2σ of randomly drawn measurements: how many do you need?">Subsampling</button>
+      </nav>
     </div>
     <div class="status" id="status" aria-live="polite">Starting Python…</div>
   </header>
 
-  <main class="layout">
+  <main class="layout" id="plotView">
     <aside class="controls">
       <details class="sec" id="savedSection" open>
         <summary>Saved plots</summary>
@@ -399,11 +405,92 @@
     </section>
   </main>
 
+  <main class="layout" id="ssView" hidden>
+    <aside class="controls">
+      <details class="sec" open>
+        <summary>Data</summary>
+        <p class="hint" id="ssNoData">Load data on the <b>Plot</b> tab first; it is shared with this tab (including combined sheets and calculated columns).</p>
+        <div class="row" id="ssSourceRow"><label for="ss-source">Data from</label><select id="ss-source" data-ss></select></div>
+        <div class="row"><label for="ss-wherecol">Only rows where</label><select id="ss-wherecol" data-ss></select></div>
+        <div class="row" id="ssWhereValRow"><label for="ss-whereval">equals</label><select id="ss-whereval" data-ss></select></div>
+        <p class="hint">e.g. <i>Grain Orientation</i> = 10 to look at one tilt of the combined sheets.</p>
+      </details>
+      <details class="sec" open>
+        <summary>What to track</summary>
+        <div class="row"><label for="ss-mode">Track</label>
+          <select id="ss-mode" data-ss><option value="mean">Running mean</option><option value="2sd">Running 2σ (2 × SD)</option></select></div>
+        <div class="row"><label for="ss-value">of column</label><select id="ss-value" data-ss></select></div>
+        <p class="hint">Values are drawn in a random order without replacement; the plot shows the statistic of the first <i>n</i> as measurements are added.</p>
+      </details>
+      <details class="sec" open>
+        <summary>Filters</summary>
+        <div class="row"><label for="ss-anglecol">Angle column</label><select id="ss-anglecol" data-ss></select></div>
+        <div class="row"><label>Angle range</label><div class="pair"><input type="text" id="ss-amin" data-ss placeholder="min"><input type="text" id="ss-amax" data-ss placeholder="max"></div></div>
+        <div class="row"><label for="ss-dparcol">Dpar column</label><select id="ss-dparcol" data-ss></select></div>
+        <div class="row"><label>Dpar range</label><div class="pair"><input type="text" id="ss-dmin" data-ss placeholder="min"><input type="text" id="ss-dmax" data-ss placeholder="max"></div></div>
+        <p class="hint">A Dpar range simulates measuring only within that window; a dash-dot line shows the value before the cut, so you can see any bias it introduces.</p>
+      </details>
+      <details class="sec" open>
+        <summary>Random draws</summary>
+        <div class="row"><label for="ss-seed">Seed</label><input type="number" id="ss-seed" data-ss value="1" step="1"><button type="button" id="ssNewOrder" class="ghost small">New random order</button></div>
+        <div class="row"><label for="ss-ghosts">Ghost runs</label><input type="number" id="ss-ghosts" data-ss value="0" min="0" max="200" step="1" title="Other random orders drawn faintly; also gives the median and 90th-percentile n"></div>
+        <div class="row"><label for="ss-tol">Tolerance ±%</label><input type="number" id="ss-tol" data-ss value="2" min="0.1" step="0.5" title="'Stays within' readout: % of the full-data value"></div>
+        <label class="check"><input type="checkbox" id="ss-funnel" data-ss checked> Expected 95% spread (dashed)</label>
+        <label class="check" id="ssSdRow"><input type="checkbox" id="ss-sdlines" data-ss checked> ± 1 SD of the data (dotted)</label>
+      </details>
+      <details class="sec">
+        <summary>Look</summary>
+        <div class="row"><label for="ss-size">Figure size</label>
+          <select id="ss-size" data-ss><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option></select></div>
+        <div class="row"><label for="ss-smooth">Line smoothing</label><input type="number" id="ss-smooth" data-ss value="5" min="1" max="101" step="2"></div>
+        <label class="check"><input type="checkbox" id="ss-line" data-ss checked> Connecting line</label>
+        <div class="row"><label for="ss-dotsize">Dot size</label><input type="number" id="ss-dotsize" data-ss value="3.5" min="0.5" step="0.5"></div>
+        <div class="row"><label for="ss-runcolor">Run colour</label>
+          <select id="ss-runcolor" data-ss><option value="#7B3294">Purple</option><option value="#BE5103">Orange</option><option value="#000000">Black</option><option value="#009E73">Green</option><option value="#D55E00">Vermilion</option></select></div>
+        <div class="row"><label for="ss-legend">Legend</label>
+          <select id="ss-legend" data-ss><option value="lower right">Lower right</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="best">Best</option><option value="off">Off</option></select></div>
+        <label class="check"><input type="checkbox" id="ss-readout" data-ss checked> Readout box (n, value, settle point)</label>
+        <div class="row"><label for="ss-readoutpos">Readout at</label>
+          <select id="ss-readoutpos" data-ss><option value="upper left">Upper left</option><option value="lower left">Lower left</option></select></div>
+        <label class="check"><input type="checkbox" id="ss-title" data-ss checked> Title with selection</label>
+        <div class="row"><label for="ss-xlabel">X label</label><input type="text" id="ss-xlabel" data-ss placeholder="Number of measurements, n"></div>
+        <div class="row"><label for="ss-ylabel">Y label</label><input type="text" id="ss-ylabel" data-ss placeholder="automatic"></div>
+        <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ss-ymin" data-ss placeholder="min"><input type="text" id="ss-ymax" data-ss placeholder="max"></div></div>
+        <p class="hint">Fonts and theme follow the Style settings on the Plot tab.</p>
+      </details>
+    </aside>
+    <section class="views">
+      <div class="figpanel">
+        <div class="figtools">
+          <button type="button" id="ssPlay" class="small">▶ Play</button>
+          <label class="inline">n <input type="range" id="ss-n" min="2" max="3" value="3" style="width:min(380px,45vw)"></label>
+          <span class="readout" id="ssNval" style="margin-left:0"></span>
+          <label class="inline">speed <select id="ssSpeed"><option value="40">fast</option><option value="120" selected>medium</option><option value="300">slow</option></select></label>
+        </div>
+        <div class="figwrap"><div class="stage" id="ssStage"><img id="ssFig" alt="Subsampling plot"></div>
+          <p class="placeholder" id="ssPlaceholder">Load data on the Plot tab, then choose what to track.</p></div>
+      </div>
+      <div class="export">
+        <h2>Export</h2>
+        <div class="row-inline">
+          <button type="button" data-ssexp="pdf">PDF</button>
+          <button type="button" data-ssexp="svg">SVG</button>
+          <button type="button" data-ssexp="png">PNG</button>
+          <span class="spacer"></span>
+          <button type="button" id="ssCsv" class="ghost">Running values (CSV)</button>
+        </div>
+        <p class="hint">Exports show the curve up to the current <i>n</i>; drag the slider to the end for the full run. Exported figures reopen this tab with its settings.</p>
+      </div>
+      <div id="ssMsgs" class="msgs"></div>
+      <div id="ssErr" class="err"></div>
+    </section>
+  </main>
+
   <footer>
     <p>Built on <a href="https://pyodide.org">Pyodide</a> and <a href="https://matplotlib.org">matplotlib</a> and <a href="https://seaborn.pydata.org">seaborn</a>.
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=12"></script>
 </body>
 </html>

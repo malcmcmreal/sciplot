@@ -1464,6 +1464,249 @@ def group_table_csv():
     return pd.DataFrame(rows)[cols].to_csv(index=False, float_format="%.6g")
 
 
+# ------------------------------------------------------------ subsampling (running mean / 2σ)
+SS_SIZES = {**FIG_SIZES, "wide": (10.0, 5.5)}
+
+
+def running_mean(v):
+    return np.cumsum(v) / np.arange(1, len(v) + 1)
+
+
+def running_2sd(v):
+    """2 × sample SD (ddof=1) of the first n values, n = 1..N (n = 1 is NaN)."""
+    v = np.asarray(v, float)
+    v = v - v.mean()                                   # centre for numerical stability
+    n = np.arange(1, len(v) + 1)
+    s1, s2 = np.cumsum(v), np.cumsum(v ** 2)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        var = (s2 - s1 ** 2 / n) / (n - 1)
+    return 2 * np.sqrt(np.clip(var, 0, None))
+
+
+def _smooth(v, w):
+    """Centred moving average (window w, shrinking at the ends)."""
+    w = int(w or 1)
+    v = np.asarray(v, float)
+    if w <= 1 or len(v) < 3:
+        return v
+    w = min(w, len(v) if len(v) % 2 else len(v) - 1)
+    k = np.ones(w)
+    ok = np.isfinite(v)
+    num = np.convolve(np.where(ok, v, 0), k, "same")
+    den = np.convolve(ok.astype(float), k, "same")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return num / den
+
+
+def _settle(run, ref, tol, start):
+    """Smallest n after which the running value stays within ±tol (fraction) of ref.
+    run[k] belongs to n = k + 1; values before n = start are ignored."""
+    if len(run) < start or not np.isfinite(ref) or ref == 0:
+        return None
+    seg = run[start - 1:]
+    out = np.where(~(np.abs(seg - ref) <= tol * abs(ref)))[0]
+    return start if len(out) == 0 else int(out[-1] + start + 1)
+
+
+def _ss_data(c):
+    """Selected values (after filters) and the same before the Dpar-range cut."""
+    ss = c.get("ss", {})
+    src = ss.get("source") or ""
+    df = DATA.get("tables", {}).get(src) if src else DATA["df"]
+    if df is None:
+        raise ValueError("No data loaded.")
+    val = ss.get("value")
+    if val not in df.columns:
+        raise ValueError("Choose the column to sample (Value).")
+    keep = pd.Series(True, index=df.index)
+    if not src and c.get("excluded"):
+        keep &= ~df.index.isin([int(r) for r in c["excluded"]])
+    wc, wv = ss.get("wherecol"), ss.get("whereval")
+    if _ok(wc) and wc in df.columns and wv not in (None, ""):
+        col = df[wc]
+        if pd.api.types.is_numeric_dtype(col) and _num(wv) is not None:
+            keep &= np.isclose(col.astype(float), _num(wv))
+        else:
+            keep &= col.astype(str) == str(wv)
+    labels = []
+    ac = ss.get("anglecol")
+    if _ok(ac) and ac in df.columns:
+        a = pd.to_numeric(df[ac], errors="coerce")
+        lo, hi = _num(ss.get("amin")), _num(ss.get("amax"))
+        if lo is not None:
+            keep &= a >= lo
+        if hi is not None:
+            keep &= a <= hi
+        if lo is not None or hi is not None:
+            labels.append(f"{ac} {'' if lo is None else f'{lo:g}'}–{'' if hi is None else f'{hi:g}'}")
+    ref_keep = keep.copy()
+    dc = ss.get("dparcol")
+    cut = False
+    if _ok(dc) and dc in df.columns:
+        d = pd.to_numeric(df[dc], errors="coerce")
+        lo, hi = _num(ss.get("dmin")), _num(ss.get("dmax"))
+        if lo is not None:
+            keep &= d >= lo
+        if hi is not None:
+            keep &= d <= hi
+        if lo is not None or hi is not None:
+            cut = True
+            labels.append(f"{dc} {'' if lo is None else f'{lo:g}'}–{'' if hi is None else f'{hi:g}'}")
+    x = pd.to_numeric(df.loc[keep, val], errors="coerce").dropna().to_numpy(float)
+    x_ref = pd.to_numeric(df.loc[ref_keep, val], errors="coerce").dropna().to_numpy(float)
+    where = f"{wc} = {wv}" if (_ok(wc) and wv not in (None, "")) else (f"sheet {src}" if src else "")
+    return x, x_ref, cut, labels, where
+
+
+def _ss_runs(c, x):
+    ss = c.get("ss", {})
+    mode = ss.get("mode", "mean")
+    f = running_mean if mode == "mean" else running_2sd
+    N = len(x)
+    rng = np.random.default_rng(int(_num(ss.get("seed")) or 0))
+    run = f(x[rng.permutation(N)]) if N else np.array([])
+    ghosts = [f(x[rng.permutation(N)]) for _ in range(int(_num(ss.get("ghosts")) or 0))] if N else []
+    return run, ghosts
+
+
+def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
+    """Running mean or running 2σ of randomly drawn values against the number measured."""
+    c = json.loads(cfg_json)
+    ss = c.get("ss", {})
+    mode = ss.get("mode", "mean")
+    x, x_ref, cut, labels, where = _ss_data(c)
+    N = len(x)
+    run, ghosts = _ss_runs(c, x)
+    start = 1 if mode == "mean" else 2
+    n = int(_num(ss.get("n")) or N)
+    n = max(min(n, N), start) if N else 0
+    tol = (_num(ss.get("tol")) or (2.0 if mode == "mean" else 10.0)) / 100
+    msgs = []
+    size = SS_SIZES.get(ss.get("size", "double"), SS_SIZES["double"])
+    rc = _style(c)
+    with plt.rc_context(rc):
+        fig, ax = plt.subplots(figsize=size, layout="constrained")
+        if N < start + 1:
+            ax.text(0.5, 0.5, f"Need at least {start + 1} values in this selection (have {N})",
+                    ha="center", va="center", transform=ax.transAxes)
+            ax.set_axis_off()
+        else:
+            ns = np.arange(1, N + 1)
+            val = ss.get("value")
+            run_col, ref_col = ss.get("runcolor") or "#7B3294", "#1f77b4"
+            if mode == "mean":
+                ref = float(x.mean())
+                sd = float(x.std(ddof=1)) if N > 1 else np.nan
+                ax.axhline(ref, color=ref_col, lw=2, zorder=2,
+                           label=f"Mean of all selected data ({ref:.3f}, N = {N})")
+                if np.isfinite(sd) and ss.get("sdlines", True):
+                    ax.axhline(ref + sd, color=ref_col, lw=1, ls=":", zorder=2)
+                    ax.axhline(ref - sd, color=ref_col, lw=1, ls=":", zorder=2, label=f"± 1 SD of the data ({sd:.3f})")
+                if cut and len(x_ref) and len(x_ref) != N:
+                    mref = float(x_ref.mean())
+                    ax.axhline(mref, color="#D55E00", lw=1.2, ls="-.", zorder=2,
+                               label=f"Mean before the {ss.get('dparcol')} cut ({mref:.3f}, N = {len(x_ref)})")
+                if ss.get("funnel", True) and np.isfinite(sd):
+                    m = ns
+                    fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
+                    half = 2 * sd / np.sqrt(m) * fpc
+                    ax.plot(m, ref + half, "--", color="0.5", lw=1, zorder=2)
+                    ax.plot(m, ref - half, "--", color="0.5", lw=1, zorder=2,
+                            label="Expected 95% range of the running mean (± 2·SD/√n)")
+                what, unit_ref = "mean", ref
+            else:
+                ref = float(2 * x.std(ddof=1))
+                ax.axhline(ref, color=ref_col, lw=2, zorder=2, label=f"2σ of all selected data ({ref:.3f}, N = {N})")
+                if cut and len(x_ref) > 1 and len(x_ref) != N:
+                    r0 = float(2 * x_ref.std(ddof=1))
+                    ax.axhline(r0, color="#D55E00", lw=1.2, ls="-.", zorder=2,
+                               label=f"2σ before the {ss.get('dparcol')} cut ({r0:.3f}, N = {len(x_ref)})")
+                if ss.get("funnel", True):
+                    m = ns[1:]
+                    fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
+                    half = 2 * ref / np.sqrt(2 * (m - 1)) * fpc
+                    ax.plot(m, ref + half, "--", color="0.5", lw=1, zorder=2)
+                    ax.plot(m, np.clip(ref - half, 0, None), "--", color="0.5", lw=1, zorder=2,
+                            label="Expected 95% spread of 2σ (normal approx.)")
+                what, unit_ref = "2σ", ref
+            lo_i = start - 1
+            for g in ghosts:
+                ax.plot(ns[lo_i:n], g[lo_i:n], color="0.55", alpha=0.25, lw=0.8, zorder=1)
+            w = int(_num(ss.get("smooth")) or 1)
+            if ss.get("line", True):
+                ax.plot(ns[lo_i:n], _smooth(run[lo_i:n], w), "-", color=run_col, lw=1.6, alpha=0.9, zorder=3,
+                        label=f"Running {what} line" + (f" (smoothed, window {w})" if w > 1 else ""))
+            ax.plot(ns[lo_i:n], run[lo_i:n], "o", ms=_num(ss.get("dotsize")) or 3.5, color=run_col, alpha=0.6,
+                    zorder=3, label=f"Running {what} (this random order)")
+            ax.plot(ns[n - 1], run[n - 1], "o", ms=9, mfc="none", mec="k", zorder=4)
+            allv = np.concatenate([run[lo_i:]] + [g[lo_i:] for g in ghosts] + [[ref]])
+            if mode == "mean" and np.isfinite(sd):
+                allv = np.concatenate([allv, [ref - sd, ref + sd]])
+            allv = allv[np.isfinite(allv)]
+            pad = 0.05 * (np.ptp(allv) or 1)
+            ylo = allv.min() - pad
+            ax.set_ylim(max(0, ylo) if mode != "mean" else ylo, allv.max() + pad)
+            if _num(ss.get("ymin")) is not None or _num(ss.get("ymax")) is not None:
+                ax.set_ylim(bottom=_num(ss.get("ymin")), top=_num(ss.get("ymax")))
+            ax.set_xlim(0, N + 1)
+            ax.set_xlabel(ss.get("xlabel") or "Number of measurements, n")
+            ax.set_ylabel(ss.get("ylabel") or (f"Running mean of {val}" if mode == "mean" else f"2σ of {val}"))
+            if ss.get("title", True):
+                t = f"Running {what} of randomly drawn {val}"
+                bits = [b for b in [where] + labels if b]
+                ax.set_title(t + ("  |  " + "  |  ".join(bits) if bits else ""), fontsize=rc["font.size"])
+            ax.grid(alpha=0.3)
+            ax.minorticks_on()
+            L = ax.legend(loc=ss.get("legend", "lower right"), fontsize=rc["legend.fontsize"], framealpha=0.9,
+                          frameon=True) if ss.get("legend", "lower right") != "off" else None
+            s_n = _settle(run, unit_ref, tol, start)
+            dev = round(100 * (run[n - 1] - unit_ref) / unit_ref, 1) + 0.0 if unit_ref else np.nan
+            readout = (f"n = {n}:  {what} = {run[n - 1]:.3f}  ({dev:+.1f}% from full-data {what})\n"
+                       f"This run stays within ±{tol * 100:g}% of the full-data {what} from n = {s_n}")
+            if ss.get("readout", True):
+                top = ss.get("readoutpos", "upper left") == "upper left"
+                ax.text(0.01, 0.98 if top else 0.02, readout, transform=ax.transAxes,
+                        fontsize=rc["legend.fontsize"], va="top" if top else "bottom",
+                        bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=6)
+            msgs.append(readout.replace("\n", "  ·  "))
+            if ghosts:
+                settles = [v for v in (_settle(r, unit_ref, tol, start) for r in [run] + list(ghosts)) if v is not None]
+                if settles:
+                    msgs.append(f"Across {len(settles)} random orders, n needed to stay within ±{tol * 100:g}% of the "
+                                f"full-data {what}: median {int(np.median(settles))}, "
+                                f"90th percentile {int(np.percentile(settles, 90))}")
+        buf = io.BytesIO()
+        md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
+    plt.close(fig)
+    return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
+                       "N": int(N), "Nref": int(len(x_ref)), "n": int(n), "start": start})
+
+
+def subsample_csv(cfg_json):
+    c = json.loads(cfg_json)
+    x, *_ = _ss_data(c)
+    run, ghosts = _ss_runs(c, x)
+    w = int(_num(c.get("ss", {}).get("smooth")) or 1)
+    out = pd.DataFrame({"n": np.arange(1, len(x) + 1), "running": run, "running_smoothed": _smooth(run, w)})
+    for k, g in enumerate(ghosts, 1):
+        out[f"ghost_{k}"] = g
+    return out.to_csv(index=False, float_format="%.6g")
+
+
+def ss_unique(col, src=""):
+    """Distinct values of a column (for the subset menu), up to 300."""
+    df = DATA.get("tables", {}).get(src) if src else DATA["df"]
+    if df is None or col not in df.columns:
+        return json.dumps([])
+    v = df[col].dropna().unique()
+    try:
+        v = sorted(v)
+    except TypeError:
+        pass
+    return json.dumps([_fmt_cell(x) for x in v[:300]])
+
+
 # ------------------------------------------------- standalone use (offline)
 if __name__ == "__main__":
     import sys
