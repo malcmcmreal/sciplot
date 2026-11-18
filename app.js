@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 26;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 27;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -156,17 +156,130 @@ function getCalc() {
     ...(r.dataset.fx ? { fx: true } : {}),
   })).filter((c) => c.name && c.expr);
 }
-function addCalcRow(c = {}) {
+function addCalcRow(c = {}, after = null) {
   const r = document.createElement('div');
   r.className = 'calc-row';
   if (c.fx) r.dataset.fx = '1';
-  r.innerHTML = `<input type="text" class="c-name" placeholder="name" value="${esc(c.name || '')}">
-    <input type="text" class="c-expr" placeholder="formula" value="${esc(c.expr || '')}">
-    <button type="button" title="Remove">✕</button>`;
-  r.querySelector('button').addEventListener('click', () => { r.remove(); applyCalc(); });
+  r.innerHTML = `<input type="text" class="c-name" placeholder="name" spellcheck="false" value="${esc(c.name || '')}">
+    <input type="text" class="c-expr" placeholder='formula, e.g. "Dpar" / "Dper"' spellcheck="false" value="${esc(c.expr || '')}">
+    <div class="c-res"></div>
+    <div class="c-btns">
+      <button type="button" data-act="up" title="Move up (formulas can use columns above them)">↑</button>
+      <button type="button" data-act="down" title="Move down">↓</button>
+      <button type="button" data-act="dup" title="Duplicate">⧉</button>
+      <button type="button" data-act="del" class="del" title="Remove">✕</button>
+    </div>`;
+  r.querySelector('.c-btns').addEventListener('click', (e) => {
+    const act = e.target.closest('button')?.dataset.act;
+    if (!act) return;
+    if (act === 'del') r.remove();
+    else if (act === 'up' && r.previousElementSibling) r.previousElementSibling.before(r);
+    else if (act === 'down' && r.nextElementSibling) r.nextElementSibling.after(r);
+    else if (act === 'dup') {
+      const n = r.querySelector('.c-name').value.trim();
+      addCalcRow({ name: uniqueCalcName(n ? `${n} copy` : 'new'), expr: r.querySelector('.c-expr').value }, r);
+    }
+    calcEmptyState();
+    applyCalc();
+  });
   r.addEventListener('input', () => { clearTimeout(calcTimer); calcTimer = setTimeout(applyCalc, 700); });
-  $('calcList').appendChild(r);
+  r.querySelector('.c-expr').addEventListener('focus', (e) => { lastExpr = e.target; });
+  if (after) after.after(r); else $('calcList').appendChild(r);
+  calcEmptyState();
+  return r;
 }
+let lastExpr = null;
+function calcEmptyState() {
+  $('calcEmpty').hidden = !!$('calcList').children.length;
+}
+function uniqueCalcName(n) {
+  const names = new Set([...(info?.columns || []), ...calcRows().map((r) => r.querySelector('.c-name').value.trim())]);
+  let k = n, i = 2;
+  while (names.has(k)) k = `${n} ${i++}`;
+  return k;
+}
+const qcol = (c) => (/^[A-Za-z_]\w*$/.test(c) ? c : `"${c}"`);
+function calcResults(stats) {
+  calcRows().forEach((r) => {
+    const n = r.querySelector('.c-name').value.trim();
+    const box = r.querySelector('.c-res');
+    const s = stats?.[n];
+    box.classList.remove('bad');
+    const tag = r.dataset.fx ? '<span class="tag" title="Made by ƒ Formula… in a column menu">menu</span>' : '';
+    if (!n || !r.querySelector('.c-expr').value.trim()) { box.innerHTML = tag + '<span class="hint">name + formula</span>'; return; }
+    if (!s) { box.innerHTML = tag; return; }
+    if (!s.ok) { box.classList.add('bad'); box.textContent = s.error; return; }
+    const scale = Math.max(Math.abs(s.min ?? 0), Math.abs(s.max ?? 0));
+    const g = (v) => (v === null || v === undefined ? '–'
+      : Math.abs(v) <= 1e-9 * scale ? 0                   // e.g. the mean of a z-score
+        : Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(2) : +v.toPrecision(4));
+    const txt = s.mean !== undefined
+      ? (s.n ? `n ${s.n}${s.missing ? ` (${s.missing} blank)` : ''} · mean ${g(s.mean)} · ${g(s.min)} … ${g(s.max)}` : 'no numeric values – check the formula')
+      : `${s.levels} distinct values`;
+    box.innerHTML = tag + esc(txt);
+    box.title = `First values: ${(s.first || []).join(', ')}`;
+  });
+}
+function insertInFormula(text) {
+  let inp = lastExpr && document.body.contains(lastExpr) ? lastExpr : null;
+  if (!inp) inp = addCalcRow({ name: uniqueCalcName('new') }).querySelector('.c-expr');
+  const a = inp.selectionStart ?? inp.value.length, b = inp.selectionEnd ?? a;
+  const pad = /^[+\-*/^<>=&|]+$/.test(text) ? ` ${text} ` : text;
+  inp.value = inp.value.slice(0, a) + pad + inp.value.slice(b);
+  // put the cursor inside the first bracket of a function, else after the insert
+  const k = pad.indexOf('(');
+  const pos = a + (k >= 0 && pad.endsWith(')') ? k + 1 : pad.length);
+  inp.focus();
+  inp.setSelectionRange(pos, pos);
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function fillCalcChips() {
+  if (!info) return;
+  const calcNames = new Set(calcRows().map((r) => r.querySelector('.c-name').value.trim()));
+  $('calcColChips').innerHTML = info.columns.map((c, i) =>
+    `<button type="button" class="${info.numeric[i] ? 'num' : ''}" data-text="${esc(qcol(c))}" title="${info.numeric[i] ? 'numeric' : 'text'}${calcNames.has(c) ? ' · calculated' : ''}">${esc(c)}</button>`).join('');
+}
+document.querySelectorAll('.calc-help .chips[data-ins]').forEach((box) => {
+  box.innerHTML = box.dataset.ins.split(' | ').map((t) => `<button type="button" data-text="${esc(t.trim())}">${esc(t.trim())}</button>`).join('');
+});
+$('calcHelp').addEventListener('mousedown', (e) => { if (e.target.closest('.chips button')) e.preventDefault(); });   // keep the caret
+$('calcHelp').addEventListener('click', (e) => {
+  const b = e.target.closest('.chips button');
+  if (b) insertInFormula(b.dataset.text);
+});
+const RECIPES = {
+  ratio: (A, B) => ['A/B', `${qcol(A)} / ${qcol(B)}`],
+  diff: (A, B) => ['A−B', `${qcol(A)} - ${qcol(B)}`],
+  sum: (A, B) => ['A+B', `${qcol(A)} + ${qcol(B)}`],
+  rowmean: (A, B) => ['row mean', `rowmean(${qcol(A)}, ${qcol(B)})`],
+  zscore: (A) => ['z', `zscore(${qcol(A)})`],
+  norm01: (A) => ['0–1', `norm01(${qcol(A)})`],
+  log10: (A) => ['log', `log10(${qcol(A)})`],
+  groupdev: (A, B, G) => ['− group mean', `${qcol(A)} - groupmean(${qcol(A)}, ${qcol(G)})`],
+  groupmean: (A, B, G) => ['group mean', `groupmean(${qcol(A)}, ${qcol(G)})`],
+  rank: (A) => ['percentile', `rank(${qcol(A)})`],
+  wrap90: (A) => ['±90', `wrap90(${qcol(A)})`],
+  flag: (A) => ['flag', `where(${qcol(A)} > 1, 1, 0)`],
+  bin: (A) => ['bin', `floor(${qcol(A)} / 0.5) * 0.5`],
+};
+$('calcTemplate').addEventListener('change', () => {
+  const k = $('calcTemplate').value;
+  $('calcTemplate').value = '';
+  if (!k || !info) return;
+  const G = info.columns.find((c) => c === $('sheetcol').value || /^sheet$/i.test(c))
+    || info.columns.find((c, i) => !info.numeric[i]) || info.columns[0];
+  const num = info.columns.filter((c, i) => info.numeric[i] && c !== G);
+  const ys = getSeries().map((s) => s.y).filter((y) => num.includes(y));
+  const A = ys[0] || num[0] || info.columns[0];        // the plotted Y first
+  const B = ys.find((y) => y !== A) || ($('x').value !== A && num.includes($('x').value) ? $('x').value : null)
+    || num.find((c) => c !== A) || A;
+  const [suffix, expr] = RECIPES[k](A, B, G);
+  const nm = { ratio: `${A} / ${B}`, diff: `${A} − ${B}`, sum: `${A} + ${B}`, rowmean: `mean of ${A}, ${B}` }[k] || `${A} ${suffix}`;
+  const r = addCalcRow({ name: uniqueCalcName(nm), expr });
+  const inp = r.querySelector('.c-expr');
+  inp.focus(); lastExpr = inp;
+  applyCalc();
+});
 let calcTimer = null;
 
 // ---------------------------------------------------------------- formulas in column pickers
@@ -295,7 +408,9 @@ document.addEventListener('change', (e) => {
 
 function applyCalcPy() {
   info = pyCall('plotter.add_columns(_args[0])', [JSON.stringify(getCalc())]);
-  $('calcErr').textContent = (info.calc_errors || []).join('\n');
+  $('calcErr').textContent = '';            // shown next to each column instead
+  calcResults(info.calc_stats);
+  fillCalcChips();
 }
 function applyCalc() {
   if (!py || !info) return;
@@ -308,7 +423,7 @@ function applyCalc() {
     scheduleRender(0);
   } catch (e) { showError(e); }
 }
-$('calcAdd').addEventListener('click', () => addCalcRow());
+$('calcAdd').addEventListener('click', () => { const r = addCalcRow({ name: uniqueCalcName('new') }); r.querySelector('.c-expr').focus(); });
 $('allsheets').addEventListener('change', () => { excluded.clear(); exclBySheet = {}; curFile && py && loadData(); });
 let sheetcolTimer = null;
 $('sheetcol').addEventListener('input', () => { clearTimeout(sheetcolTimer); sheetcolTimer = setTimeout(() => { if ($('allsheets').checked && curFile && py) loadData(); }, 700); });
@@ -725,7 +840,7 @@ function applyConfig(c, opts = {}) {
   if (c.ss) applySS(c.ss);
   if (c.view) setView(c.view);
   if (c.sheetcol) $('sheetcol').value = c.sheetcol;
-  if (Array.isArray(c.calc)) { $('calcList').innerHTML = ''; c.calc.forEach(addCalcRow); if (c.calc.length) $('calcPanel').open = true; }
+  if (Array.isArray(c.calc)) { $('calcList').innerHTML = ''; c.calc.forEach((x) => addCalcRow(x)); calcEmptyState(); }
   if (c.headerrow) $('headerrow').value = c.headerrow;
   if (c.skipafter !== undefined) $('skipafter').value = c.skipafter;
   if (Array.isArray(c.excluded)) excluded = new Set(c.excluded);
@@ -879,12 +994,16 @@ $('dlScript').addEventListener('click', () => {
 // ---------------------------------------------------------------- data table
 function showTable() {
   $('dataPanel').hidden = false;
+  $('calcPanel').hidden = false;
+  fillCalcChips();
+  calcEmptyState();
   const shown = Math.min(info.preview.length, 2000);
   $('dataInfo').textContent = `${info.nrows} rows × ${info.columns.length} columns` +
     (shown < info.nrows ? ` (first ${shown} shown)` : '') +
     '. Click a row number to exclude or include that row.';
+  const calcNames = new Set(getCalc().map((c) => c.name));
   const head = '<tr><th class="rown">#</th>' + info.columns.map((c, i) =>
-    `<th class="${info.numeric[i] ? '' : 'txt'}" title="${info.numeric[i] ? 'numeric' : 'text'}">${esc(c)}</th>`).join('') + '</tr>';
+    `<th class="${info.numeric[i] ? '' : 'txt'}${calcNames.has(c) ? ' calc' : ''}" title="${info.numeric[i] ? 'numeric' : 'text'}">${esc(c)}</th>`).join('') + '</tr>';
   const body = info.preview.slice(0, 2000).map((r, ri) => `<tr data-row="${ri}"><td class="rown">${ri + 1}</td>` +
     r.map((v, i) => `<td class="${info.numeric[i] ? '' : 'txt'}">${esc(v)}</td>`).join('') + '</tr>').join('');
   $('dataTable').innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
@@ -1284,7 +1403,7 @@ async function startFresh() {
   applyConfig({ ...DEFAULTS, series: [], calc: [] });
   $('fname').textContent = ''; $('saveName').value = '';
   $('stage').classList.remove('show'); $('placeholder').hidden = false;
-  $('dataPanel').hidden = true; $('msgs').textContent = ''; $('err').textContent = '';
+  $('dataPanel').hidden = true; $('calcPanel').hidden = true; $('msgs').textContent = ''; $('err').textContent = '';
   document.querySelectorAll('[data-exp], #dlScript, #saveBrowser, #saveProject').forEach((b) => { b.disabled = true; });
   hideBanner();
 }

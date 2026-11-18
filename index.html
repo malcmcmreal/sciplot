@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=24">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -73,13 +73,6 @@
           <label class="check"><input type="checkbox" id="allsheets"> Combine all sheets into one table</label>
           <div class="row"><label for="sheetcol">Sheet name column</label><input type="text" id="sheetcol" value="Sheet" title="Name of the column that holds each row's sheet name, e.g. Grain Orientation"></div>
         </div>
-        <details class="sub" id="calcPanel">
-          <summary>Calculated columns</summary>
-          <p class="hint">Make a new column from others, e.g. <code>90 - `Angle from Horizontal`</code> or <code>Dpar / Dper</code>. Put names with spaces in `backticks`; <code>np.sin</code>, <code>np.degrees</code>, <code>np.abs</code> etc. work.</p>
-          <div id="calcList"></div>
-          <button type="button" id="calcAdd" class="ghost small">+ Add column</button>
-          <div class="err" id="calcErr"></div>
-        </details>
                     
       </details>
 
@@ -552,6 +545,47 @@
 
       
 
+      <div class="datapanel calcpanel" id="calcPanel" hidden>
+        <div class="calc-head">
+          <h2>Calculated columns</h2>
+          <span class="hint">New columns made from others. They appear in every column menu, in the data table (orange headings) and are saved with the plot.</span>
+          <span class="spacer"></span>
+          <select id="calcTemplate" title="Start a column from a common recipe">
+            <option value="">+ From a recipe…</option>
+            <option value='ratio'>Ratio  A / B</option>
+            <option value='diff'>Difference  A − B</option>
+            <option value='sum'>Sum  A + B</option>
+            <option value='rowmean'>Mean of several columns (per row)</option>
+            <option value='zscore'>Z-score of A</option>
+            <option value='norm01'>Scale A to 0–1</option>
+            <option value='log10'>log₁₀ of A</option>
+            <option value='groupdev'>A minus its group's mean (e.g. per sheet)</option>
+            <option value='groupmean'>Group mean of A (e.g. per sheet)</option>
+            <option value='rank'>Percentile rank of A</option>
+            <option value='wrap90'>Fold angle A into −90…+90°</option>
+            <option value='flag'>Flag: 1 where A &gt; value, else 0</option>
+            <option value='bin'>Bin A into classes of width w</option>
+          </select>
+          <button type="button" id="calcAdd" class="small">+ Add column</button>
+        </div>
+        <div class="calc-cols"><span>Name</span><span>Formula</span><span>Result</span><span></span></div>
+        <div id="calcList"></div>
+        <p class="hint calc-empty" id="calcEmpty">No calculated columns yet. Add one, start from a recipe, or pick <b>ƒ Formula…</b> in any column menu.</p>
+        <div class="err" id="calcErr"></div>
+        <details class="sub calc-help" id="calcHelp">
+          <summary>Insert columns &amp; functions (click to add to the formula you're editing)</summary>
+          <div class="calc-ins"><b>Columns</b><div class="chips" id="calcColChips"></div></div>
+          <div class="calc-ins"><b>Operators</b><div class="chips" data-ins="+ | - | * | / | ^ | ( | ) | > | < | == | & | |"></div></div>
+          <div class="calc-ins"><b>Maths</b><div class="chips" data-ins="sqrt() | abs() | log10() | ln() | exp() | round() | floor() | ceil() | mod(, ) | clip(, , )"></div></div>
+          <div class="calc-ins"><b>Angles</b><div class="chips" data-ins="sind() | cosd() | tand() | degrees() | radians() | arctan2(, ) | wrap90() | wrap180() | wrap360()"></div></div>
+          <div class="calc-ins"><b>Whole column</b><div class="chips" data-ins="mean() | median() | std() | zscore() | norm01() | rank() | cumsum() | diff()"></div></div>
+          <div class="calc-ins"><b>Across columns</b><div class="chips" data-ins="rowmean(, ) | rowsum(, ) | rowmin(, ) | rowmax(, )"></div></div>
+          <div class="calc-ins"><b>Per group</b><div class="chips" data-ins="groupmean(, ) | groupmedian(, ) | groupstd(, ) | groupmin(, ) | groupmax(, ) | groupn(, )"></div></div>
+          <div class="calc-ins"><b>Logic</b><div class="chips" data-ins="where(, , ) | isnan() | min(, ) | max(, ) | nan | pi"></div></div>
+          <p class="hint">Write column names in "quotes" (plain one-word names work without). <code>^</code> is power. Whole-column functions give every row the same value (e.g. <code>"Dpar" - mean("Dpar")</code>); per-group ones use a second column as the group, e.g. <code>groupmean("Dpar", "Sheet")</code>. Formulas can use columns made above them. Results must be numbers; use <code>where(cond, 1, 0)</code> for flags.</p>
+        </details>
+      </div>
+
       <div id="msgs" class="msgs"></div>
       <div id="err" class="err"></div>
 
@@ -653,6 +687,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=33"></script>
+  <script type="module" src="app.js?v=34"></script>
 </body>
 </html>

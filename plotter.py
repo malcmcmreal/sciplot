@@ -247,8 +247,32 @@ FORMULA_FUNCS = {
     "mean": lambda x: np.nanmean(x) + 0 * np.asarray(x, float),
     "median": lambda x: np.nanmedian(x) + 0 * np.asarray(x, float),
     "std": lambda x: np.nanstd(x, ddof=1) + 0 * np.asarray(x, float),
-    "np": np,
+    "np": np, "nan": np.nan,
+    # whole-column transforms
+    "zscore": lambda x: (np.asarray(x, float) - np.nanmean(x)) / np.nanstd(x, ddof=1),
+    "norm01": lambda x: (np.asarray(x, float) - np.nanmin(x)) / ((np.nanmax(x) - np.nanmin(x)) or 1),
+    "cumsum": lambda x: pd.Series(np.asarray(x, float)).cumsum(skipna=True).values,
+    "diff": lambda x: pd.Series(np.asarray(x, float)).diff().values,
+    "rank": lambda x: pd.Series(np.asarray(x, float)).rank(pct=True).values * 100,   # percentile rank
+    "isnan": lambda x: pd.isna(x),
+    # across columns, row by row
+    "rowmean": lambda *a: np.nanmean(np.column_stack([np.asarray(v, float) for v in a]), axis=1),
+    "rowsum": lambda *a: np.nansum(np.column_stack([np.asarray(v, float) for v in a]), axis=1),
+    "rowmax": lambda *a: np.nanmax(np.column_stack([np.asarray(v, float) for v in a]), axis=1),
+    "rowmin": lambda *a: np.nanmin(np.column_stack([np.asarray(v, float) for v in a]), axis=1),
+    # per group (e.g. per sheet): every row gets its group's value
+    "groupmean": lambda x, g: _group(x, g, "mean"),
+    "groupmedian": lambda x, g: _group(x, g, "median"),
+    "groupstd": lambda x, g: _group(x, g, "std"),
+    "groupmin": lambda x, g: _group(x, g, "min"),
+    "groupmax": lambda x, g: _group(x, g, "max"),
+    "groupn": lambda x, g: _group(x, g, "count"),
 }
+
+
+def _group(x, g, how):
+    s = pd.Series(np.asarray(x, float))
+    return s.groupby(pd.Series(np.asarray(g)).astype(str).values).transform(how).values
 
 
 def eval_formula(expr, df):
@@ -283,7 +307,7 @@ def add_columns(calc_json):
     """Add calculated columns: [{"name": ..., "expr": ...}] (see eval_formula). Later formulas
     can use earlier ones. Returns load-style JSON for the updated table."""
     df = DATA["base"].copy()
-    msgs = []
+    msgs, stats = [], {}
     DATA["calc"] = calc_json or "[]"
     DATA["sheetdf"] = {}
     for item in json.loads(calc_json or "[]"):
@@ -292,11 +316,26 @@ def add_columns(calc_json):
             continue
         try:
             df[name] = eval_formula(expr, df)
+            v = df[name]
+            if pd.api.types.is_numeric_dtype(v) and not pd.api.types.is_bool_dtype(v):
+                f = v.astype(float)
+                f = f[np.isfinite(f)]
+                stats[name] = {"ok": True, "n": int(len(f)), "missing": int(len(v) - len(f)),
+                               "mean": float(f.mean()) if len(f) else None,
+                               "min": float(f.min()) if len(f) else None,
+                               "max": float(f.max()) if len(f) else None,
+                               "first": [_fmt_cell(x) for x in v.head(3)]}
+            else:
+                stats[name] = {"ok": True, "n": int(v.notna().sum()), "missing": int(v.isna().sum()),
+                               "levels": int(v.nunique()), "first": [_fmt_cell(x) for x in v.head(3)]}
         except Exception as e:  # report and carry on with the other columns
             msg = str(e).replace("__c[", "[")
             msgs.append(f"{name}: {type(e).__name__ if not msg else msg}")
-    return _finish_load(df, DATA["raw"], DATA["sheets"], DATA["sheet"], DATA["skipped"], keep_base=True,
-                        calc_msgs=msgs)
+            stats[name] = {"ok": False, "error": type(e).__name__ if not msg else msg}
+    out = json.loads(_finish_load(df, DATA["raw"], DATA["sheets"], DATA["sheet"], DATA["skipped"],
+                                  keep_base=True, calc_msgs=msgs))
+    out["calc_stats"] = stats
+    return _dumps(out)
 
 
 def _finish_load(df, raw_rows, sheets, sheet, skipped, keep_base=False, calc_msgs=None):

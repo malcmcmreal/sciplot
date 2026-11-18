@@ -46,6 +46,18 @@ The sidebar has three tool sets: **Data & files** (load data, export, saved plot
 
 Under **Layout & style → Axes → Title & axis-title size and position**, each panel can set its own sizes for the title, X title, Y title and tick labels. The title can sit left, centre or right and be bold, the X title left, centre or right, and the Y title bottom, middle or top, on the left or right side. Each has a gap (in pt) that moves it closer to or further from the plot.
 
+## Calculated columns
+
+The **Calculated columns** panel sits under the figure, above the data table. Each column has a name and a formula, and shows its result as you type (count, mean and range, or the error). Columns can be moved up or down (a formula can use columns above it), duplicated or removed. They appear in every column menu and in the data table (orange headings), and are saved with the plot.
+
+- **From a recipe…** starts common columns: ratio, difference, sum, row mean, z-score, 0–1 scaling, log₁₀, a value minus its group's mean (e.g. per sheet), group mean, percentile rank, folding angles to ±90°, a 0/1 flag, or binning into classes.
+- **Insert columns & functions** lists every column and function as buttons that type into the formula you're editing:
+  - maths and angle functions (`sind`, `wrap90`, …)
+  - whole-column (`mean`, `zscore`, `norm01`, `rank`, `cumsum`, `diff`)
+  - across columns per row (`rowmean`, `rowsum`, `rowmin`, `rowmax`)
+  - per group (`groupmean("Dpar", "Sheet")`, `groupmedian`, `groupstd`, `groupmin`, `groupmax`, `groupn`)
+  - logic (`where`, `isnan`)
+
 ## Multi-panel figures
 
 Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel starts empty (no columns chosen) but keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
