@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 5;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 6;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -77,9 +77,11 @@ async function loadData(sheet = null) {
     const path = '/tmp/' + curFile.name.replace(/[^\w.\-]/g, '_');
     py.FS.writeFile(path, curFile.bytes);
     info = pyCall('plotter.load_file(*_args)', [path, curFile.name, $('header').value, sheet ?? curFile.sheet,
-      +$('headerrow').value || 1, +$('skipafter').value || 0]);
+      +$('headerrow').value || 1, +$('skipafter').value || 0, $('allsheets').checked]);
+    if (getCalc().length) applyCalcPy();
     curFile.sheet = info.sheet;
-    $('sheetRow').hidden = !info.sheets.length;
+    $('allsheetsRow').hidden = info.sheets.length < 2;
+    $('sheetRow').hidden = !info.sheets.length || ($('allsheets').checked && info.sheets.length > 1);
     $('sheet').innerHTML = info.sheets.map((s) => `<option ${s === info.sheet ? 'selected' : ''}>${esc(s)}</option>`).join('');
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
     showRaw();
@@ -117,6 +119,40 @@ $('pasteLoad').addEventListener('click', () => {
   const t = $('paste').value;
   if (t.trim()) setFile('pasted.txt', new TextEncoder().encode(t));
 });
+// ---------------------------------------------------------------- calculated columns
+function getCalc() {
+  return [...document.querySelectorAll('.calc-row')].map((r) => ({
+    name: r.querySelector('.c-name').value.trim(), expr: r.querySelector('.c-expr').value.trim(),
+  })).filter((c) => c.name && c.expr);
+}
+function addCalcRow(c = {}) {
+  const r = document.createElement('div');
+  r.className = 'calc-row';
+  r.innerHTML = `<input type="text" class="c-name" placeholder="name" value="${esc(c.name || '')}">
+    <input type="text" class="c-expr" placeholder="formula" value="${esc(c.expr || '')}">
+    <button type="button" title="Remove">✕</button>`;
+  r.querySelector('button').addEventListener('click', () => { r.remove(); applyCalc(); });
+  r.addEventListener('input', () => { clearTimeout(calcTimer); calcTimer = setTimeout(applyCalc, 700); });
+  $('calcList').appendChild(r);
+}
+let calcTimer = null;
+function applyCalcPy() {
+  info = pyCall('plotter.add_columns(_args[0])', [JSON.stringify(getCalc())]);
+  $('calcErr').textContent = (info.calc_errors || []).join('\n');
+}
+function applyCalc() {
+  if (!py || !info) return;
+  try {
+    const keep = { x: $('x').value, series: getSeries(), cols: Object.fromEntries([...document.querySelectorAll('select[data-col]')].map((e) => [e.id, e.value])) };
+    applyCalcPy();
+    fillColumns(keep);
+    showTable();
+    scheduleRender(0);
+  } catch (e) { showError(e); }
+}
+$('calcAdd').addEventListener('click', () => addCalcRow());
+$('allsheets').addEventListener('change', () => { excluded.clear(); curFile && py && loadData(); });
+
 let headerTimer = null;
 function reloadHeader() {
   $('headerRows').hidden = $('header').value !== 'row';
@@ -244,7 +280,11 @@ const CATEGORICAL = new Set(['bar', ...GROUPED]);
 function updateVisibility() {
   const k = $('kind').value;
   const hist = k === 'hist', bar = k === 'bar', dist = DIST.has(k), grouped = GROUPED.has(k);
-  const mappable = k === 'scatter' || k === 'linemarkers';
+  const polar = k === 'polar';
+  const mappable = k === 'scatter' || k === 'linemarkers' || polar;
+  $('polarRows').hidden = !polar;
+  $('polspanRow').hidden = $('polstyle').value !== 'quarter';
+  $('vecRows').hidden = !$('vector').checked;
   $('histRows').hidden = !hist;
   $('binwidthRow').hidden = $('binmode').value !== 'width';
   $('binsRow').hidden = $('binmode').value !== 'count';
@@ -266,15 +306,15 @@ function updateVisibility() {
   $('refwmeanRow').hidden = !xy;
   $('refwmeanHint').hidden = !xy;
   $('vlinesRow').hidden = CATEGORICAL.has(k);
-  $('oneoneRow').hidden = !xy;
+  $('oneoneRow').hidden = !xy || polar;
   document.querySelectorAll('.series .s-look').forEach((el) => { el.hidden = GROUPED.has(k) || k === 'kde'; });
-  document.querySelectorAll('.series .s-markerrow').forEach((el) => { el.hidden = !(k === 'scatter' || k === 'linemarkers'); });
+  document.querySelectorAll('.series .s-markerrow').forEach((el) => { el.hidden = !(k === 'scatter' || k === 'linemarkers' || polar) || $('vector').checked; });
   document.querySelectorAll('.series .s-lsrow').forEach((el) => { el.hidden = !(k === 'line' || k === 'linemarkers' || k === 'step'); });
   $('violinRow').hidden = k !== 'violin';
   $('distpointsRow').hidden = !(k === 'box' || k === 'violin');
   $('xRow').hidden = hist || k === 'kde';
   $('groupHint').hidden = !grouped;
-  $('xLabel').textContent = grouped ? 'Group by' : 'X column';
+  $('xLabel').textContent = grouped ? 'Group by' : polar ? 'Angle column' : 'X column';
   const blank = $('x').querySelector('option[value=""]');
   if (blank) blank.textContent = grouped ? '(series)' : '(row number)';
   $('ticksRow').hidden = $('theme').value !== 'publication';
@@ -291,6 +331,8 @@ function getConfig({ withExcluded = true } = {}) {
   }
   c.series = getSeries();
   c.header = $('header').value;
+  c.allsheets = $('allsheets').checked;
+  c.calc = getCalc();
   c.headerrow = +$('headerrow').value || 1;
   c.skipafter = +$('skipafter').value || 0;
   if (curFile?.sheet) c.sheet = curFile.sheet;
@@ -307,6 +349,8 @@ function applyConfig(c) {
     else el.value = c[el.id];
   }
   if (c.header) $('header').value = c.header;
+  if ('allsheets' in c) $('allsheets').checked = !!c.allsheets;
+  if (Array.isArray(c.calc)) { $('calcList').innerHTML = ''; c.calc.forEach(addCalcRow); if (c.calc.length) $('calcPanel').open = true; }
   if (c.headerrow) $('headerrow').value = c.headerrow;
   if (c.skipafter !== undefined) $('skipafter').value = c.skipafter;
   if (Array.isArray(c.excluded)) excluded = new Set(c.excluded);
@@ -436,12 +480,13 @@ $('dlScript').addEventListener('click', () => {
 // ---------------------------------------------------------------- data table
 function showTable() {
   $('dataPanel').hidden = false;
+  const shown = Math.min(info.preview.length, 2000);
   $('dataInfo').textContent = `${info.nrows} rows × ${info.columns.length} columns` +
-    (info.preview.length < info.nrows ? ` (first ${info.preview.length} shown)` : '') +
+    (shown < info.nrows ? ` (first ${shown} shown)` : '') +
     '. Click a row number to exclude or include that row.';
   const head = '<tr><th class="rown">#</th>' + info.columns.map((c, i) =>
     `<th class="${info.numeric[i] ? '' : 'txt'}" title="${info.numeric[i] ? 'numeric' : 'text'}">${esc(c)}</th>`).join('') + '</tr>';
-  const body = info.preview.map((r, ri) => `<tr data-row="${ri}"><td class="rown">${ri + 1}</td>` +
+  const body = info.preview.slice(0, 2000).map((r, ri) => `<tr data-row="${ri}"><td class="rown">${ri + 1}</td>` +
     r.map((v, i) => `<td class="${info.numeric[i] ? '' : 'txt'}">${esc(v)}</td>`).join('') + '</tr>').join('');
   $('dataTable').innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
 }
@@ -498,14 +543,21 @@ function pxToData(px, py_) {
 }
 function inAxes(px, py_) {
   const g = last?.geom, { w, h } = box();
+  if (g?.polar) return false;
   return g && px >= g.x0 * w && px <= g.x1 * w && py_ >= g.y0 * h && py_ <= g.y1 * h;
 }
 function nearest(px, py_, maxDist = 10) {
   let best = null, bd = maxDist;
+  const { w, h } = box();
   for (const s of last?.points || []) {
-    for (const [row, x, y, ex] of s.pts) {
-      if ((last.geom.xlog && x <= 0) || (last.geom.ylog && y <= 0)) continue;
-      const [qx, qy] = dataToPx(x, y);
+    for (let k = 0; k < s.pts.length; k++) {
+      const [row, x, y, ex] = s.pts[k];
+      let qx, qy;
+      if (s.px) { qx = s.px[k][0] * w; qy = s.px[k][1] * h; }
+      else {
+        if ((last.geom.xlog && x <= 0) || (last.geom.ylog && y <= 0)) continue;
+        [qx, qy] = dataToPx(x, y);
+      }
       const d = Math.hypot(qx - px, qy - py_);
       if (d < bd) { bd = d; best = { row, x, y, ex, label: s.label, color: s.color, qx, qy }; }
     }
@@ -610,7 +662,7 @@ window.addEventListener('mouseup', (e) => {
   if (tool === 'exclude' && p) toggleRow(p.row);
   drawOverlay([mx, my]);
 });
-canvas.addEventListener('dblclick', () => { if (tool === 'zoom') resetZoom(); });
+canvas.addEventListener('dblclick', () => { if (tool === 'zoom' && !last?.geom?.polar) resetZoom(); });
 
 function zoomTo(d) {
   const [ax, ay] = pxToData(d.x0, d.y0);

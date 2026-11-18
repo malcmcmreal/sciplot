@@ -128,12 +128,25 @@ def _coerce(df):
     return df.dropna(how="all").reset_index(drop=True)
 
 
-def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0):
+def _sheet_frame(xl, sheet, header, headerrow, skipafter):
+    raw = xl.parse(sheet, header=None)
+    if header == "row":
+        raw = raw.iloc[headerrow - 1:]
+    if raw.dropna(how="all").empty:
+        return None
+    df = _apply_header(raw.dropna(how="all").reset_index(drop=True), "yes" if header == "row" else header)
+    if skipafter and header == "row":
+        df = df.iloc[int(skipafter):]
+    return df
+
+
+def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, allsheets=False):
     """Load csv / tsv / txt / dat / xlsx / xls into the active DataFrame.
 
     header: "auto" | "yes" (first row) | "no" | "row" (use row `headerrow`, 1-based,
     ignoring everything above it). `skipafter` drops rows straight after the header
-    (e.g. a units row).
+    (e.g. a units row). allsheets stacks every sheet that has the same columns as the
+    majority, adding a "Sheet" column with the sheet name (numeric names become numbers).
     """
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     headerrow = max(1, int(headerrow or 1))
@@ -147,6 +160,20 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0):
                     for i, r in enumerate(raw.head(40).itertuples(index=False))]
         if header == "row":
             raw = raw.iloc[headerrow - 1:]
+        if allsheets and len(sheets) > 1:
+            frames = {sh: _sheet_frame(xl, sh, header, headerrow, skipafter) for sh in sheets}
+            frames = {k: v for k, v in frames.items() if v is not None}
+            sigs = [tuple(v.columns) for v in frames.values()]
+            common = max(set(sigs), key=sigs.count)
+            parts = []
+            for sh, v in frames.items():
+                if tuple(v.columns) == common:
+                    v = v.copy()
+                    v.insert(0, "Sheet", sh)
+                    parts.append(v)
+            df = _coerce(pd.concat(parts, ignore_index=True))
+            skipped = [sh for sh, v in frames.items() if tuple(v.columns) != common]
+            return _finish_load(df, raw_rows, sheets, None, skipped)
     else:
         lines = _read_lines(path)
         raw_rows = [[i + 1, ln[:200]] for i, ln in enumerate(lines[:40])]
@@ -162,8 +189,33 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0):
     if skipafter and header == "row":
         df = df.iloc[int(skipafter):]
     df = _coerce(df)
+    return _finish_load(df, raw_rows, sheets, sheet, [])
+
+
+def add_columns(calc_json):
+    """Add calculated columns: [{"name": ..., "expr": ...}]. Expressions use column names
+    (in `backticks` if they contain spaces), numbers, + - * / ** and numpy functions
+    such as np.sin, np.degrees, np.abs. Returns load-style JSON for the updated table."""
+    df = DATA["base"].copy()
+    msgs = []
+    env = {"np": np, "pi": np.pi}
+    for item in json.loads(calc_json or "[]"):
+        name, expr = str(item.get("name", "")).strip(), str(item.get("expr", "")).strip()
+        if not name or not expr:
+            continue
+        try:
+            df[name] = pd.to_numeric(df.eval(expr, local_dict=env, engine="python"), errors="coerce")
+        except Exception as e:  # report and carry on with the other columns
+            msgs.append(f"{name}: {e}")
+    return _finish_load(df, DATA["raw"], DATA["sheets"], DATA["sheet"], DATA["skipped"], keep_base=True,
+                        calc_msgs=msgs)
+
+
+def _finish_load(df, raw_rows, sheets, sheet, skipped, keep_base=False, calc_msgs=None):
+    if not keep_base:
+        DATA.update(base=df.copy(), raw=raw_rows, sheets=sheets, sheet=sheet, skipped=skipped)
     DATA["df"] = df
-    head = df.head(2000)
+    head = df.head(20000)    # values for tooltips; the page table shows the first 2000
     preview = head.astype(object).where(head.notna(), "").values.tolist()
     return json.dumps({
         "columns": list(df.columns),
@@ -174,6 +226,8 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0):
         "raw": raw_rows,
         "sheets": sheets,
         "sheet": sheet,
+        "skipped_sheets": skipped,
+        "calc_errors": calc_msgs or [],
     })
 
 
@@ -418,7 +472,8 @@ class Mapping:
     def colorbar(self, fig, ax):
         if self.hue and self.hue["continuous"]:
             sm = matplotlib.cm.ScalarMappable(norm=self.hue["norm"], cmap=self.hue["cmap"])
-            cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25)
+            cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25,
+                              shrink=0.7 if ax.name == "polar" else 1.0)
             cb.set_label(self.c.get("huelabel") or self.hue["col"])
             if isinstance(self.hue["norm"], matplotlib.colors.LogNorm):
                 cb.ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(subs=(1, 2, 5)))
@@ -454,8 +509,11 @@ def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
     k = int(c.get("refband") or 0)
     kk = k or 1
     st = _stats(vals, err)
-    line = ax.axhline if axis == "y" else ax.axvline
-    span = ax.axhspan if axis == "y" else ax.axvspan
+    if ax.name == "polar":
+        line, span = _polar_ref(ax, axis)
+    else:
+        line = ax.axhline if axis == "y" else ax.axvline
+        span = ax.axhspan if axis == "y" else ax.axvspan
     sig = "σ" if kk == 1 else f"{kk}σ"
     todo = []
     if c.get("refmean"):
@@ -479,6 +537,14 @@ def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
 
 
 def _custom_lines(ax, c, kind):
+    if ax.name == "polar":
+        line_y, _ = _polar_ref(ax, "y")
+        line_x, _ = _polar_ref(ax, "x")
+        for v in _nums(c.get("hlines")):
+            line_y(v, color="0.35", linewidth=0.8, linestyle="--", zorder=1)
+        for v in _nums(c.get("vlines")):
+            line_x(v, color="0.35", linewidth=0.8, linestyle="--", zorder=1)
+        return
     xl, yl = ax.get_xlim(), ax.get_ylim()
     for v in _nums(c.get("hlines")):
         ax.axhline(v, color="0.35", linewidth=0.8, linestyle="--", zorder=1)
@@ -494,6 +560,158 @@ def _custom_lines(ax, c, kind):
     ax.set_ylim(yl)
 
 
+# ----------------------------------------------------------------- polar
+POLAR_ZERO = {"up": "N", "right": "E", "down": "S", "left": "W"}
+
+
+def _polar_setup(ax, df, c, series):
+    """Quarter (or other sector) polar axes: the X column is stretched over the arc."""
+    xcol = c.get("x") if c.get("x") in df.columns else None
+    xs = pd.to_numeric(df[xcol], errors="coerce") if xcol else pd.Series(np.arange(1, len(df) + 1))
+    style = c.get("polstyle", "quarter")
+    amin, amax = _num(c.get("polmin")), _num(c.get("polmax"))
+    if style == "half":                     # true angles, −90 … +90 with 0 at the start direction
+        amin = -90.0 if amin is None else amin
+        amax = 90.0 if amax is None else amax
+    elif style == "full":                   # true angles round the whole circle
+        amin = 0.0 if amin is None else amin
+        amax = 360.0 if amax is None else amax
+    amin = float(np.nanmin(xs)) if amin is None else amin
+    amax = float(np.nanmax(xs)) if amax is None else amax
+    if amax == amin:
+        amax = amin + 1
+    ax.set_theta_zero_location(POLAR_ZERO.get(c.get("polstart", "up"), "N"))
+    ax.set_theta_direction(-1 if c.get("poldir", "cw") == "cw" else 1)
+    if style in ("half", "full"):
+        scale = np.pi / 180
+        ax._sp_tx = lambda v: np.asarray(v, float) * scale
+        if amax - amin < 360:
+            ax.set_thetamin(amin)
+            ax.set_thetamax(amax)
+        span = amax - amin
+    else:                                   # stretch the data range over the chosen arc
+        span = float(c.get("polspan") or 90)
+        scale = np.radians(span) / (amax - amin)
+        ax._sp_tx = lambda v: (np.asarray(v, float) - amin) * scale
+        if span < 360:
+            ax.set_thetamin(0)
+            ax.set_thetamax(span)
+    ax._sp_amin, ax._sp_amax, ax._sp_scale, ax._sp_span = amin, amax, scale, span
+    ax.grid(True, color="0.85", linewidth=0.5)
+    ax.set_axisbelow(True)
+
+
+def _polar_finish(ax, c, df, series, xl, yl):
+    amin, amax = ax._sp_amin, ax._sp_amax
+    if c.get("polstyle", "quarter") in ("half", "full") and amax - amin >= 120:
+        step = 30 if amax - amin <= 360 else 60
+        ticks = np.arange(np.ceil(amin / step) * step, amax + 1e-9, step)
+    else:
+        ticks = matplotlib.ticker.MaxNLocator(7).tick_values(amin, amax)
+    ticks = [t for t in ticks if amin - 1e-9 <= t <= amax + 1e-9]
+    if ax._sp_span >= 360 and len(ticks) > 1 and np.isclose(ticks[-1] - ticks[0], 360):
+        ticks = ticks[:-1]                      # full circle: last tick sits on the first
+    suffix = c.get("polunit", "°")
+    ax.set_thetagrids(np.degrees(ax._sp_tx(ticks)), [f"{t:g}{suffix}" for t in ticks])
+    # radial range
+    lo, hi = _num(c.get("ymin")), _num(c.get("ymax"))
+    if lo is None:
+        ys = pd.concat([pd.to_numeric(df[s["y"]], errors="coerce") for s in series])
+        lo = 0.0 if ys.min() >= 0 else None
+    ax.set_ylim(bottom=lo, top=hi)
+    if c.get("ylog"):
+        ax.set_rscale("log")
+    else:
+        ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(5))
+    ax.set_ylabel(yl, labelpad=6)
+    ax.set_xlabel("")
+    if xl:
+        # put the angle label just outside the arc's midpoint, clear of the tick labels
+        r0, r1 = ax.get_ylim()
+        mid = float(ax._sp_tx((amin + amax) / 2))
+        o = ax.transData.transform((0, r0))
+        p = ax.transData.transform((mid, r1))
+        v = (p - o) / (np.hypot(*(p - o)) or 1)
+        fs = plt.rcParams["axes.labelsize"]
+        fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9)
+        dist = fs * 3.4
+        rot = np.degrees(np.arctan2(v[0], -v[1])) if abs(v[1]) > 1e-6 or abs(v[0]) > 1e-6 else 0
+        rot = rot - 180 if rot > 90 else rot + 180 if rot < -90 else rot
+        tr = matplotlib.transforms.offset_copy(ax.transData, fig=ax.figure, x=v[0] * dist,
+                                               y=v[1] * dist, units="points")
+        ax.text(mid, r1, xl, rotation=rot, ha="center", va="center", rotation_mode="anchor",
+                transform=tr, fontsize=fs)
+    ax.tick_params(axis="x", pad=2)
+
+
+def _polar_ref(ax, axis):
+    """Reference-line drawers for polar axes: Y values -> arcs, X values -> rays."""
+    amin, amax, tx = ax._sp_amin, ax._sp_amax, ax._sp_tx
+    phis = np.linspace(tx(amin), tx(amax), 200)
+    if axis == "y":
+        def line(v, **kw):
+            ax.plot(phis, np.full_like(phis, v), **kw)
+
+        def span(a, b, **kw):
+            ax.fill_between(phis, a, b, **kw)
+    else:
+        def line(v, **kw):
+            r0, r1 = ax.get_ylim()
+            ax.plot([tx(v), tx(v)], [r0, r1], **kw)
+            ax.set_ylim(r0, r1)
+
+        def span(a, b, **kw):
+            r0, r1 = ax.get_ylim()
+            pp = np.linspace(tx(max(a, amin)), tx(min(b, amax)), 100)
+            ax.fill_between(pp, r0, r1, **kw)
+            ax.set_ylim(r0, r1)
+    return line, span
+
+
+# ----------------------------------------------------------------- vectors
+def _vectors(ax, px, y, idx, df, c, mapping, col, alpha):
+    """Draw each point as a short line: direction, length and colour from columns.
+    Lengths and widths are in points, so lines keep their on-screen angle on any axes."""
+    n = len(idx)
+    dcol = c.get("vecdir") if _ok(c.get("vecdir")) and c.get("vecdir") in df.columns else None
+    if dcol:
+        dirs = pd.to_numeric(df.loc[idx, dcol], errors="coerce").values.astype(float)
+    elif ax.name == "polar":
+        dirs = np.asarray(px, float) / ax._sp_scale + (ax._sp_amin if c.get("polstyle", "quarter") == "quarter" else 0)
+    else:
+        dirs = np.zeros(n)
+    if c.get("vecdirconv", "up_cw") == "up_cw":          # 0° = up, positive clockwise
+        alpha_rad = np.radians(90 - dirs)
+    else:                                                 # 0° = right (horizontal), positive anticlockwise
+        alpha_rad = np.radians(dirs)
+    lmax = _num(c.get("veclenmax")) or 14.0
+    lcol = c.get("veclen") if _ok(c.get("veclen")) and c.get("veclen") in df.columns else None
+    if lcol:
+        lv = pd.to_numeric(df.loc[idx, lcol], errors="coerce").values.astype(float)
+        top = np.nanmax(np.abs(pd.to_numeric(df[lcol], errors="coerce"))) or 1.0
+        L = lmax * np.abs(lv) / top
+    else:
+        L = np.full(n, lmax * 0.7)
+    L = np.where(np.isfinite(L), L, 0)
+    ux, uy = np.cos(alpha_rad) * L, np.sin(alpha_rad) * L
+    if c.get("vecstyle", "axial") == "axial":               # line centred on the point (axial data, e.g. Dpar)
+        segs = np.stack([np.c_[-ux / 2, -uy / 2], np.c_[ux / 2, uy / 2]], axis=1)
+    else:                                                   # from the point outwards
+        segs = np.stack([np.c_[np.zeros(n), np.zeros(n)], np.c_[ux, uy]], axis=1)
+    cols = mapping.colors_for(idx, col) if (mapping is not None and mapping.hue) else [col] * n
+    pts_to_px = matplotlib.transforms.Affine2D().scale(ax.figure.dpi / 72.0)
+    lc = matplotlib.collections.LineCollection(
+        segs, offsets=np.c_[np.asarray(px, float), np.asarray(y, float)], offset_transform=ax.transData,
+        transform=pts_to_px, colors=cols, linewidths=_num(c.get("vecwidth")) or 1.2,
+        alpha=alpha, capstyle="round", zorder=2)
+    ax.add_collection(lc)
+    if c.get("vecdot"):
+        ax.scatter(px, y, s=4, color=cols, zorder=2.1, linewidths=0)
+    ax.update_datalim(np.c_[np.asarray(px, float), np.asarray(y, float)])
+    ax.autoscale_view()
+    return lcol, (np.nanmax(np.abs(pd.to_numeric(df[lcol], errors="coerce"))) if lcol else None)
+
+
 # ----------------------------------------------------------------- x–y
 def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
     kind = c.get("kind", "scatter")
@@ -502,7 +720,13 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
     vary_m = c.get("varymarkers", True)
     ms = c.get("markersize", 4)
     alpha = _num(c.get("alpha")) or 1.0
-    mapping = Mapping(df, c) if kind in ("scatter", "linemarkers") else None
+    polar = kind == "polar"
+    tx = getattr(ax, "_sp_tx", None) or (lambda v: v)        # data -> plotted angle for polar plots
+    if polar and xcol and not pd.api.types.is_numeric_dtype(df[xcol]):
+        raise ValueError("The angle (X) column of a polar plot must be numeric.")
+    jitter = (_num(c.get("poljitter")) or 0) if polar else 0
+    jrng = np.random.default_rng(0)
+    mapping = Mapping(df, c) if kind in ("scatter", "linemarkers", "polar") else None
     mapped = mapping is not None and mapping.active
     if not mapped and any(_ok(c.get(k)) for k in ("hue", "sizeby", "styleby")) and kind in ("line", "step"):
         msgs.append("Colour/size/shape mapping applies to scatter and line + marker plots")
@@ -526,29 +750,49 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
         ls = LINESTYLES.get(s.get("ls") or "-", "-")
 
         if excl.any() and x_numeric and c.get("showexcluded", True):
-            ax.plot(x[excl], y[excl], linestyle="none", marker="x", color="0.6",
+            ax.plot(x_plot_all[excl] if polar else x[excl], y[excl], linestyle="none", marker="x", color="0.6",
                     markersize=ms, markeredgewidth=0.8, zorder=1)
+        if polar:
+            xj = x.astype(float) + (jrng.uniform(-jitter, jitter, len(x)) if jitter else 0)
+            xj = xj.clip(ax._sp_amin, ax._sp_amax) if jitter else xj
+            x_plot_all = pd.Series(np.asarray(tx(xj)), index=x.index)
         if x_numeric:
-            points.append({"label": lbl, "color": col,
-                           "pts": [[int(r), float(x[r]), float(y[r]), bool(excl[r])]
-                                   for r in df.index[valid]]})
+            pp = {"label": lbl, "color": col,
+                  "pts": [[int(r), float(x[r]), float(y[r]), bool(excl[r])] for r in df.index[valid]]}
+            if polar:
+                pp["phi"] = [float(x_plot_all[r]) for r in df.index[valid]]
+            points.append(pp)
 
         x, y = x[mask], y[mask]
         yerr = yerr[mask].fillna(0) if yerr is not None else None
         xerr = xerr[mask].fillna(0) if xerr is not None else None
+        if polar and xerr is not None:
+            xerr = xerr * ax._sp_scale
         if kind in ("line", "step", "linemarkers") and x_numeric and c.get("sortx", True):
             order = np.argsort(x.values, kind="stable")
             x, y = x.iloc[order], y.iloc[order]
             yerr = yerr.iloc[order] if yerr is not None else None
             xerr = xerr.iloc[order] if xerr is not None else None
 
-        if mapped:
+        px = x_plot_all[x.index] if polar else x
+        vec = c.get("vector") and kind in ("scatter", "polar") and x_numeric
+        if vec:
+            if yerr is not None or xerr is not None:
+                ax.errorbar(px, y, yerr=yerr, xerr=xerr, fmt="none", ecolor="0.6",
+                            elinewidth=0.6, alpha=alpha, zorder=1.5)
+            lcol, ltop = _vectors(ax, px, y, x.index, df, c, mapping, col, alpha)
+            ax.plot([], [], color="0.3" if (mapping is not None and mapping.hue) else col,
+                    linewidth=_num(c.get("vecwidth")) or 1.2, label=lbl)
+            if lcol and i == 0:
+                extra.append((Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False),
+                              f"line length ∝ {lcol} (longest = {ltop:.3g})"))
+        elif mapped:
             neutral = "0.55" if mapping.hue else col
             if yerr is not None or xerr is not None:
-                ax.errorbar(x, y, yerr=yerr, xerr=xerr, fmt="none", ecolor=neutral,
+                ax.errorbar(px, y, yerr=yerr, xerr=xerr, fmt="none", ecolor=neutral,
                             elinewidth=0.7, alpha=alpha, zorder=1.5)
             if kind == "linemarkers":
-                ax.plot(x, y, color=neutral, linestyle=ls, zorder=1.6, alpha=alpha)
+                ax.plot(px, y, color=neutral, linestyle=ls, zorder=1.6, alpha=alpha)
             fc = mapping.colors_for(x.index, col)
             sz = mapping.sizes_for(x.index, ms)
             groups = ([(m, (mapping.style["values"].loc[x.index] == k).values)
@@ -559,10 +803,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
                     continue
                 gfc = [fc[j] for j in np.flatnonzero(g)]
                 if open_m:
-                    ax.scatter(x[g], y[g], s=sz[g] ** 2, marker=m, facecolors="white",
+                    ax.scatter(px[g], y[g], s=sz[g] ** 2, marker=m, facecolors="white",
                                edgecolors=gfc, linewidths=0.9, alpha=alpha, zorder=2)
                 else:
-                    ax.scatter(x[g], y[g], s=sz[g] ** 2, marker=m, c=gfc,
+                    ax.scatter(px[g], y[g], s=sz[g] ** 2, marker=m, c=gfc,
                                edgecolors=c.get("edgecolor", "black") if c.get("edgecolor", "black") != "none" else "face",
                                linewidths=0.4, alpha=alpha, zorder=2)
             # series key (shape + series colour, or grey when colour is mapped)
@@ -573,7 +817,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
         else:
             mstyle = dict(marker=mk, markeredgecolor=col,
                           markerfacecolor="white" if open_m else col, markeredgewidth=0.8)
-            if kind == "scatter":
+            if kind in ("scatter", "polar"):
                 fmt = dict(linestyle="none", **mstyle)
             elif kind == "linemarkers":
                 fmt = dict(linestyle=ls, **mstyle)
@@ -582,10 +826,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
             else:
                 fmt = dict(linestyle=ls, marker="none")
             if yerr is not None or xerr is not None:
-                ax.errorbar(x, y, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha,
+                ax.errorbar(px, y, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha,
                             elinewidth=0.7, label=lbl, zorder=2, **fmt)
             else:
-                ax.plot(x, y, color=col, label=lbl, zorder=2, alpha=alpha, **fmt)
+                ax.plot(px, y, color=col, label=lbl, zorder=2, alpha=alpha, **fmt)
 
         # polynomial fit (+ optional seaborn confidence band)
         fit = int(s.get("fit") or 0)
@@ -601,13 +845,13 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
             r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
             xx = np.linspace(xv.min(), xv.max(), 200)
             ci = int(c.get("ci") or 0)
-            if ci and sns is not None:
+            if ci and sns is not None and not polar:
                 sns.regplot(x=xv, y=yv, order=fit, ci=ci, scatter=False, ax=ax,
                             color=col, truncate=True, seed=0, n_boot=500,
                             line_kws={"linewidth": 0, "zorder": 1})
                 if w is not None:
                     msgs.append(f"{lbl}: confidence band is unweighted (bootstrap)")
-            ax.plot(xx, np.polyval(coef, xx), color=col, linestyle="--",
+            ax.plot(tx(xx), np.polyval(coef, xx), color=col, linestyle="--",
                     linewidth=0.9, marker="none", zorder=3,
                     label=_fit_label(coef, fit, r2) if c.get("fitlegend", True) else None)
             msgs.append(f"{lbl}: " + _fit_label(coef, fit, r2)
@@ -631,6 +875,8 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra):
     if mapped:
         mapping.colorbar(fig, ax)
         extra.extend(mapping.legend_handles(ms, open_m))
+    elif c.get("vector") and mapping is not None and mapping.hue:
+        mapping.colorbar(fig, ax)
 
 
 # ----------------------------------------------------------------- histogram
@@ -802,6 +1048,83 @@ def _distribution(ax, df, c, series, colors, xcol, msgs):
     ax.set_xlabel("")
 
 
+def _legend(fig, ax, c, series, extra):
+    leg = c.get("legend", "best")
+    h, l = ax.get_legend_handles_labels()
+    names = [s.get("label") or s["y"] for s in series]
+    order = sorted(range(len(l)), key=lambda k: (l[k] not in names,
+                                                l[k].startswith("y = "),
+                                                names.index(l[k]) if l[k] in names else k))
+    h, l = [h[k] for k in order], [l[k] for k in order]
+    if len(series) == 1 and not c.get("legendsingle") and l and l[0] == names[0]:
+        h, l = h[1:], l[1:]      # a lone series doesn't need its own entry
+    h += [e[0] for e in extra]
+    l += [e[1] for e in extra]
+    if leg == "best" and (extra or ax.name == "polar"):
+        leg = "below"            # keys too big for the data area; sector plots have no free corner
+    if leg != "off" and h and leg == "below":
+        n_base = len(h) - len(extra)
+        groups, cur = [], []
+        for e in extra:
+            if isinstance(e[0], Rectangle) and cur:
+                groups.append(cur)
+                cur = []
+            cur.append(e)
+        if cur:
+            groups.append(cur)
+        if not groups:                 # nothing mapped: plain legend underneath
+            groups = [list(zip(h, l))]
+            n_base = 0
+        elif n_base:                   # series / fit / reference lines stay on the axes
+            LB = ax.legend(h[:n_base], l[:n_base], loc="best")
+            LB.set_in_layout(False)
+            ax.add_artist(LB)
+        # long keys wrap into columns of at most 4 rows so the plot isn't squeezed
+        wrapped = []
+        for g in groups:
+            wrapped += [g[i:i + 4] for i in range(0, len(g), 4)]
+        groups = wrapped
+        rows = max(len(g) for g in groups)
+        blank = (Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False), "")
+        hh, ll = [], []
+        for g in groups:
+            g = g + [blank] * (rows - len(g))
+            hh += [e[0] for e in g]
+            ll += [e[1] for e in g]
+        fs = plt.rcParams["legend.fontsize"]
+        fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9) - 1
+        for size in (fs, fs - 1, fs - 2, fs - 3):
+            L = fig.legend(hh, ll, loc="outside lower center", ncols=len(groups),
+                           columnspacing=1.0, handletextpad=0.3, fontsize=max(size, 4.5))
+            fig.canvas.draw()
+            if L.get_window_extent().width <= fig.bbox.width * 0.98 or size <= 4.5:
+                break
+            L.remove()
+        h, l = hh, ll
+    elif leg != "off" and h:
+        if leg == "outside":
+            L = fig.legend(h, l, loc="outside right upper")
+        elif ax.name == "polar" and leg == "best":
+            # the corner opposite the arc's centre is empty in a sector plot
+            L = ax.legend(h, l, loc="upper right", bbox_to_anchor=(1.08, 1.08))
+            L.set_in_layout(False)
+        else:
+            L = ax.legend(h, l, loc=leg)
+            L.set_in_layout(False)
+    if leg != "off" and h:
+        for txt, lab in zip(L.get_texts(), l):
+            if any(lab == e[1] and isinstance(e[0], Rectangle) for e in extra):
+                txt.set_fontweight("bold")
+
+
+def _finish_legend(fig, ax, c, series, extra, kind, msgs, points):
+    _legend(fig, ax, c, series, extra)
+    if c.get("panel"):
+        ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
+                fontweight="bold", fontsize=c.get("fontsize", 9) + 2)
+    return fig, msgs, points
+
+
 def make_figure(c, df=None):
     df = DATA["df"] if df is None else df
     if df is None:
@@ -814,7 +1137,13 @@ def make_figure(c, df=None):
         size = (_num(c.get("width")) or 3.5, _num(c.get("height")) or 2.6)
 
     with plt.rc_context(_style(c)):
-        fig, ax = plt.subplots(figsize=size, layout="constrained")
+        polar = kind == "polar"
+        if polar:
+            fig = plt.figure(figsize=size, layout="constrained")
+            ax = fig.add_subplot(projection="polar")
+            _polar_setup(ax, df, c, series)
+        else:
+            fig, ax = plt.subplots(figsize=size, layout="constrained")
         if not series:
             ax.text(0.5, 0.5, "Choose a Y column to plot", ha="center", va="center",
                     transform=ax.transAxes, color="0.5")
@@ -832,6 +1161,15 @@ def make_figure(c, df=None):
             _distribution(ax, df, c, series, colors, xcol, msgs)
         else:
             _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra)
+        if polar:
+            xl = c.get("xlabel") or (xcol or "Index")
+            yl = c.get("ylabel") or (series[0]["y"] if len(series) == 1 else "")
+            _polar_finish(ax, c, df, series, xl, yl)
+            if any(c.get(k) for k in ("hlines", "vlines")):
+                _custom_lines(ax, c, kind)
+            if c.get("title"):
+                ax.set_title(c["title"])
+            return _finish_legend(fig, ax, c, series, extra, kind, msgs, points)
 
         # ---- labels
         xl, yl = c.get("xlabel"), c.get("ylabel")
@@ -885,63 +1223,7 @@ def make_figure(c, df=None):
             ax.set_axisbelow(True)
 
         # ---- legend
-        leg = c.get("legend", "best")
-        h, l = ax.get_legend_handles_labels()
-        names = [s.get("label") or s["y"] for s in series]
-        order = sorted(range(len(l)), key=lambda k: (l[k] not in names,
-                                                    l[k].startswith("y = "),
-                                                    names.index(l[k]) if l[k] in names else k))
-        h, l = [h[k] for k in order], [l[k] for k in order]
-        if len(series) == 1 and not c.get("legendsingle") and l and l[0] == names[0]:
-            h, l = h[1:], l[1:]      # a lone series doesn't need its own entry
-        h += [e[0] for e in extra]
-        l += [e[1] for e in extra]
-        if leg == "best" and extra:
-            leg = "below"            # size/shape/category keys are too big to sit on the data
-        if leg != "off" and h and leg == "below":
-            n_base = len(h) - len(extra)
-            groups, cur = [], []
-            for e in extra:
-                if isinstance(e[0], Rectangle) and cur:
-                    groups.append(cur)
-                    cur = []
-                cur.append(e)
-            if cur:
-                groups.append(cur)
-            if not groups:                 # nothing mapped: plain legend underneath
-                groups = [list(zip(h, l))]
-                n_base = 0
-            elif n_base:                   # series / fit / reference lines stay on the axes
-                LB = ax.legend(h[:n_base], l[:n_base], loc="best")
-                LB.set_in_layout(False)
-                ax.add_artist(LB)
-            rows = max(len(g) for g in groups)
-            blank = (Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False), "")
-            hh, ll = [], []
-            for g in groups:
-                g = g + [blank] * (rows - len(g))
-                hh += [e[0] for e in g]
-                ll += [e[1] for e in g]
-            fs = plt.rcParams["legend.fontsize"]
-            fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9) - 1
-            for size in (fs, fs - 1, fs - 2, fs - 3):
-                L = fig.legend(hh, ll, loc="outside lower center", ncols=len(groups),
-                               columnspacing=1.0, handletextpad=0.3, fontsize=max(size, 4.5))
-                fig.canvas.draw()
-                if L.get_window_extent().width <= fig.bbox.width * 0.98 or size <= 4.5:
-                    break
-                L.remove()
-            h, l = hh, ll
-        elif leg != "off" and h:
-            if leg == "outside":
-                L = fig.legend(h, l, loc="outside right upper")
-            else:
-                L = ax.legend(h, l, loc=leg)
-                L.set_in_layout(False)
-        if leg != "off" and h:
-            for txt, lab in zip(L.get_texts(), l):
-                if any(lab == e[1] and isinstance(e[0], Rectangle) for e in extra):
-                    txt.set_fontweight("bold")
+        _legend(fig, ax, c, series, extra)
 
         if kind in CATEGORICAL:
             ax.tick_params(axis="x", which="both", top=False, bottom=kind == "bar")
@@ -960,10 +1242,19 @@ def make_figure(c, df=None):
     return fig, msgs, points
 
 
-def _geometry(fig, ax):
-    """Axes position (fractions of the figure, origin top-left) and data limits."""
+def _geometry(fig, ax, points=None):
+    """Axes position (fractions of the figure, origin top-left) and data limits.
+    For polar axes, each point's pixel position is attached instead (key "px")."""
     fig.canvas.draw()
     p = ax.get_position()
+    if ax.name == "polar":
+        W, H = fig.bbox.width, fig.bbox.height
+        for pp in points or []:
+            phi = np.asarray(pp.pop("phi", []), float)
+            r = np.asarray([q[2] for q in pp["pts"]], float)
+            xy = ax.transData.transform(np.c_[phi, r]) if len(phi) else np.zeros((0, 2))
+            pp["px"] = [[float(a / W), float(1 - b / H)] for a, b in xy]
+        return {"polar": True, "x0": p.x0, "x1": p.x1, "y0": 1 - p.y1, "y1": 1 - p.y0}
     return {"x0": p.x0, "x1": p.x1, "y0": 1 - p.y1, "y1": 1 - p.y0,
             "xlim": list(map(float, ax.get_xlim())), "ylim": list(map(float, ax.get_ylim())),
             "xlog": ax.get_xscale() == "log", "ylog": ax.get_yscale() == "log"}
@@ -975,8 +1266,10 @@ def render(cfg_json, fmt="png", dpi=200):
     fig, msgs, points = make_figure(c)
     buf = io.BytesIO()
     with plt.rc_context(_style(c)):
-        geom = _geometry(fig, fig.axes[0]) if fmt == "png" else None
+        geom = _geometry(fig, fig.axes[0], points) if fmt == "png" else None
         fig.savefig(buf, format=fmt, dpi=dpi)
+    for pp in points:
+        pp.pop("phi", None)
     plt.close(fig)
     pal = _colors(c.get("palette", "okabe-ito"), len(c.get("series", [])))
     return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,

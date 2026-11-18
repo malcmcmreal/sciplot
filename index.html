@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -52,6 +52,14 @@
           <p class="hint">Rows above the header (instrument metadata etc.) are ignored. Tip: click a row in <b>Raw file</b> below the plot to use it as the header.</p>
         </div>
         <div class="row" id="sheetRow" hidden><label for="sheet">Sheet</label><select id="sheet"></select></div>
+        <label class="check" id="allsheetsRow" hidden><input type="checkbox" id="allsheets"> Combine all sheets (adds a <b>Sheet</b> column)</label>
+        <details class="sub" id="calcPanel">
+          <summary>Calculated columns</summary>
+          <p class="hint">Make a new column from others, e.g. <code>90 - `Angle from Horizontal`</code> or <code>Dpar / Dper</code>. Put names with spaces in `backticks`; <code>np.sin</code>, <code>np.degrees</code>, <code>np.abs</code> etc. work.</p>
+          <div id="calcList"></div>
+          <button type="button" id="calcAdd" class="ghost small">+ Add column</button>
+          <div class="err" id="calcErr"></div>
+        </details>
       </details>
 
       <details class="sec" open>
@@ -64,6 +72,7 @@
               <option value="line">Line</option>
               <option value="step">Step</option>
               <option value="bar">Bar (grouped)</option>
+              <option value="polar">Polar (quarter / half / full circle)</option>
             </optgroup>
             <optgroup label="Distributions (seaborn)">
               <option value="hist">Histogram</option>
@@ -78,6 +87,25 @@
         <p class="hint" id="groupHint" hidden>Choose a text column to split one series into groups, or leave as “(series)” to compare the Y series side by side.</p>
         <div id="seriesList"></div>
         <button type="button" id="addSeries" class="ghost small">+ Add series</button>
+        <div id="polarRows" hidden>
+          <div class="row"><label for="polstyle">Polar style</label>
+            <select id="polstyle" data-cfg>
+              <option value="quarter">Quarter: stretch the angle range over the arc</option>
+              <option value="half">Half: −90° to +90°, true angles</option>
+              <option value="full">Full circle, true angles</option>
+            </select></div>
+          <div class="row"><label>Angle range</label><div class="pair"><input type="text" id="polmin" data-cfg placeholder="from"><input type="text" id="polmax" data-cfg placeholder="to"></div></div>
+          <div class="row" id="polspanRow"><label for="polspan">Arc</label>
+            <select id="polspan" data-cfg><option value="90">90° (quarter)</option><option value="180">180°</option><option value="270">270°</option><option value="360">360°</option></select></div>
+          <div class="row"><label for="polstart">0 points</label>
+            <select id="polstart" data-cfg><option value="up">Up</option><option value="right">Right</option><option value="down">Down</option><option value="left">Left</option></select></div>
+          <div class="row"><label for="poldir">Angles run</label>
+            <select id="poldir" data-cfg><option value="cw">Clockwise</option><option value="ccw">Anticlockwise</option></select></div>
+          <div class="row"><label for="poljitter">Angle jitter ±</label><input type="number" id="poljitter" data-cfg value="0" step="0.5" min="0" title="Spread points sideways when many share the same angle (display only)"></div>
+          <div class="row"><label for="polunit">Angle labels</label>
+            <select id="polunit" data-cfg><option value="°">with °</option><option value="">plain numbers</option></select></div>
+          <p class="hint">X column → angle, Y column(s) → distance from the centre. X label labels the arc, Y label the radius.</p>
+        </div>
         <div id="histRows" hidden>
           <div class="row"><label for="binmode">Bins</label>
             <select id="binmode" data-cfg><option value="auto">Automatic</option><option value="width">Set bin width</option><option value="count">Set number of bins</option></select></div>
@@ -114,6 +142,19 @@
           <div class="row"><label for="sizeby">Size by</label><select id="sizeby" data-cfg data-col></select></div>
           <div class="row" id="sizeRangeRow" hidden><label>Size range</label><div class="pair"><input type="text" id="sizemin" data-cfg value="2" title="Smallest marker (pt)"><input type="text" id="sizemax" data-cfg value="9" title="Largest marker (pt)"></div></div>
           <div class="row"><label for="styleby">Shape by</label><select id="styleby" data-cfg data-col></select></div>
+          <label class="check"><input type="checkbox" id="vector" data-cfg> Draw points as lines (vectors)</label>
+          <div id="vecRows" hidden>
+            <div class="row"><label for="vecdir">Direction from</label><select id="vecdir" data-cfg data-col></select></div>
+            <div class="row"><label for="vecdirconv">Direction is</label>
+              <select id="vecdirconv" data-cfg><option value="up_cw">0° = up, clockwise +</option><option value="right_ccw">0° = horizontal, anticlockwise + (90° = up)</option></select></div>
+            <div class="row"><label for="veclen">Length from</label><select id="veclen" data-cfg data-col></select></div>
+            <div class="row"><label for="veclenmax">Longest (pt)</label><input type="number" id="veclenmax" data-cfg value="14" min="1" step="1"></div>
+            <div class="row"><label for="vecwidth">Line width</label><input type="number" id="vecwidth" data-cfg value="1.2" min="0.2" step="0.1"></div>
+            <div class="row"><label for="vecstyle">Line</label>
+              <select id="vecstyle" data-cfg><option value="axial">Centred on the point (axial, e.g. Dpar)</option><option value="arrow">From the point outwards</option></select></div>
+            <label class="check"><input type="checkbox" id="vecdot" data-cfg> Dot at each point</label>
+            <p class="hint">Direction “none” uses the point's angle on a polar plot. Colour comes from <b>Colour by</b>.</p>
+          </div>
           <div class="row"><label for="edgecolor">Marker edge</label>
             <select id="edgecolor" data-cfg><option value="black">Black</option><option value="white">White</option><option value="none">None</option></select></div>
         </div>
@@ -325,6 +366,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=6"></script>
+  <script type="module" src="app.js?v=7"></script>
 </body>
 </html>
