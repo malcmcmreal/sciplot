@@ -1183,7 +1183,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
             if kind == "linemarkers":
                 ax.plot(px, yd, color=neutral, linestyle=ls, zorder=1.6, alpha=alpha)
             fc = mapping.colors_for(x.index, col)
-            sz = mapping.sizes_for(x.index, ms)
+            sz = mapping.sizes_for(x.index, ms_s)          # the series' own size, if set
             groups = ([(m, (mapping.style["values"].loc[x.index] == k).values)
                        for k, m in mapping.style["markers"].items()]
                       if mapping.style else [(mk, np.ones(len(x), bool))])
@@ -1193,16 +1193,16 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
                 gfc = [fc[j] for j in np.flatnonzero(g)]
                 if open_m:
                     ax.scatter(px[g], yd[g], s=sz[g] ** 2, marker=m, facecolors="white",
-                               edgecolors=gfc, linewidths=0.9, alpha=alpha, zorder=2)
+                               edgecolors=gfc, linewidths=0.9, alpha=alpha_s, zorder=2)
                 else:
                     ax.scatter(px[g], yd[g], s=sz[g] ** 2, marker=m, c=gfc,
                                edgecolors=c.get("edgecolor", "black") if c.get("edgecolor", "black") != "none" else "face",
-                               linewidths=0.4, alpha=alpha, zorder=2)
+                               linewidths=0.4, alpha=alpha_s, zorder=2)
             # series key (shape + series colour, or grey when colour is mapped)
             hcol = "0.3" if mapping.hue else col
             ax.plot([], [], linestyle="-" if kind == "linemarkers" else "none",
                     marker=None if mapping.style else mk, color=hcol,
-                    markerfacecolor="white" if open_m else hcol, markersize=ms, label=lbl)
+                    markerfacecolor="white" if open_m else hcol, markersize=ms_s, label=lbl)
         else:
             mstyle = dict(marker=mk, markeredgecolor=col, markersize=ms_s,
                           markerfacecolor="white" if open_m else col, markeredgewidth=0.8)

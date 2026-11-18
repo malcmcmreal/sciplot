@@ -40,7 +40,7 @@ Live: https://malcmcmreal.github.io/sciplot/
 
 ## Where things are
 
-The sidebar has three tool sets: **Data & files** (load data, export, saved plots and projects), **Plot & stats** (plot type, series, colour/size/shape, mean and reference lines, fits, group summaries) and **Layout & style** (figure layout for multi-panel figures, axes, fonts and colours). It opens on Plot & stats once data is loaded and remembers the last one you used.
+The sidebar has three tool sets: **Data & files** (load data, export, saved plots and projects), **Plot & stats** (plot type, series, colour/size/shape, mean and reference lines, fits, group summaries) and **Layout & style** (figure layout for multi-panel figures, axes, fonts and colours). It opens on Plot & stats once data is loaded and remembers the last one you used. The tabs stay anchored at the top while you scroll. Less-used settings sit in small fold-out menus (e.g. *Colour range & colour bar*, *More fit options*, *Fine spacing*). **Export → File name** sets the name of downloaded figures (blank: the data file's name).
 
 ## Titles and axis titles
 

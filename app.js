@@ -105,6 +105,7 @@ async function loadData(sheet = null) {
     $('sheetRow').hidden = !info.sheets.length || ($('allsheets').checked && info.sheets.length > 1);
     $('sheet').innerHTML = info.sheets.map((s) => `<option ${s === info.sheet ? 'selected' : ''}>${esc(s)}</option>`).join('');
     const firstLoad = !$('x').options.length;
+    $('expname').placeholder = dataName();
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
     if (firstLoad && toolTab() === 'file') setToolTab('plot');   // data in: on to plotting
     fillSS();
@@ -751,7 +752,10 @@ function download(name, blob) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
-const baseName = () => (curFile ? curFile.name.replace(/\.[^.]+$/, '') : 'figure');
+const dataName = () => (curFile ? curFile.name.replace(/\.[^.]+$/, '') : 'figure');
+// the File name box in Export wins; strip characters file systems dislike and any extension typed
+const baseName = () => (($('expname')?.value || '').trim().replace(/\.(pdf|svg|png|csv|json)$/i, '')
+  .replace(/[\\/:*?"<>|]+/g, '_') || dataName());
 
 $('copyLink').addEventListener('click', async () => {
   const url = location.href.split('#')[0] + '#s=' + encodeCfg(getConfig({ withExcluded: false }));
@@ -1474,7 +1478,7 @@ $('ssCsv').addEventListener('click', () => {
 // ---------------------------------------------------------------- panels (multi-panel figures)
 // Each panel keeps its own complete settings; the sidebar edits the active one. Data-level
 // settings (file, header, combined sheets, calculated columns, excluded rows) are shared.
-const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view'];
+const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view', 'expname'];
 const STYLE_KEYS = ['font', 'fontsize', 'theme', 'despine', 'ticks', 'palette', 'markerfill', 'varymarkers',
   'markersize', 'linewidth', 'capsize', 'legendframe', 'minor', 'alpha'];
 var figure = { panels: [null], active: 0 };   // var + function: usable before this point

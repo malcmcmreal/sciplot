@@ -266,3 +266,26 @@ details.sec > summary + h3.subhead, details.sec > h3.subhead:first-of-type { bor
 #sec-export .row-inline { flex-wrap: wrap; }
 #sec-export .row-inline .spacer { flex-basis: 100%; height: 0; }
 .row label.check.inline { width: auto; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; gap: 0.3rem; }
+
+details.sub > summary { font-size: 0.8rem; color: var(--link); padding: 0.15rem 0; }
+details.sub[open] { border-left: 2px solid var(--line); padding-left: 0.6rem; margin-left: 0.1rem; }
+details.sub[open] > summary { margin-bottom: 0.35rem; }
+
+/* tool tabs: their own box, anchored at the top, joined to the sidebar below. The column
+   stretches to the full page height so the tabs stay put however far you scroll. */
+.toolcol { align-self: stretch; position: relative; min-width: 0; --headh: 3.2rem; }
+.toolhead { position: sticky; top: 0; z-index: 5; height: var(--headh); box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  border-radius: 0 0 var(--radius) var(--radius); padding: 0.55rem 1rem; margin-top: -1rem;
+  box-shadow: 0 6px 12px -6px rgba(0, 0, 0, 0.6); }
+.toolhead { border-radius: var(--radius) var(--radius) 0 0; margin-top: 0; top: 0.5rem; }
+.toolhead::before { content: ""; position: absolute; left: -1px; right: -1px; bottom: 100%; height: 0.5rem;
+  background: var(--bg); }
+.toolhead .tooltabs { margin: 0; }
+.toolcol > .controls { position: sticky; top: calc(0.5rem + var(--headh)); max-height: calc(100vh - var(--headh) - 1rem);
+  overflow-y: auto; border-top: none; border-top-left-radius: 0; border-top-right-radius: 0; }
+@media (max-width: 900px) {
+  .toolhead { top: 0; }
+  .toolhead::before { display: none; }
+  .toolcol > .controls { position: static; max-height: none; }
+}
