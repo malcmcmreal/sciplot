@@ -610,6 +610,29 @@ def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
         msgs.append(prefix + label)
 
 
+def _ref_extra(ax, df, c, msgs, force_axis=None):
+    """Mean / median lines of other columns (not the plotted ones): refextra = [{col, axis, color}]."""
+    if not any(c.get(k) for k in ("refmean", "refmedian", "refwmean")):
+        return
+    keep = ~df.index.isin([int(r) for r in c.get("excluded", [])])
+    for item in c.get("refextra") or []:
+        col = item.get("col")
+        if col not in df.columns:
+            continue
+        v = pd.to_numeric(df.loc[keep, col], errors="coerce").dropna()
+        if not len(v):
+            continue
+        ecol = item.get("err")
+        err = pd.to_numeric(df.loc[v.index, ecol], errors="coerce").values if ecol in df.columns else None
+        axis = force_axis or item.get("axis", "y")
+        cc = {**c, "refwmean": bool(c.get("refwmean")) and err is not None}
+        if item.get("color"):
+            cc["refcolor"], cc["refcustom"] = item["color"], item["color"]
+        elif not c.get("refcolor"):
+            cc["refcolor"] = "black"
+        _ref_lines(ax, v.values, err, cc, "black", f"{col}: ", axis, msgs)
+
+
 def _custom_lines(ax, c, kind):
     if ax.name == "polar":
         line_y, _ = _polar_ref(ax, "y")
@@ -1018,7 +1041,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
             msgs.append(f"{lbl}: fit skipped (X column is not numeric)")
 
         # mean / median / weighted-mean reference lines
-        if any(c.get(k) for k in ("refmean", "refmedian", "refwmean")) and len(y):
+        if any(c.get(k) for k in ("refmean", "refmedian", "refwmean")) and len(y) and c.get("refaxis", "y") != "none":
             prefix = f"{lbl}: " if len(series) > 1 else ""
             axis = c.get("refaxis", "y")
             if axis in ("y", "both"):
@@ -1034,6 +1057,7 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
             _group_summary(ax, df, c, x, y, xc, x_numeric, col, lbl if len(series) > 1 else "",
                            tx, msgs, groups_out)
     df = main_df
+    _ref_extra(ax, df, c, msgs)
 
     if mapped:
         mapping.colorbar(fig, ax)
@@ -1125,11 +1149,12 @@ def _hist(ax, fig, df, c, series, colors, msgs):
             if xs is not None:
                 ax.plot(xs, ys, color=col if not colorby else "black",
                         linewidth=c.get("linewidth", 1.2), zorder=3)
-        if any(c.get(k) for k in ("refmean", "refmedian")) and len(v):
+        if any(c.get(k) for k in ("refmean", "refmedian")) and len(v) and c.get("refaxis", "y") != "none":
             prefix = f"{lbl}: " if len(series) > 1 else ""
             _ref_lines(ax, v.values, None, {**c, "refwmean": False},
                        "black" if colorby else (col if (len(series) > 1 or col != "#000000") else "#c8372d"),
                        prefix, "x", msgs)
+    _ref_extra(ax, df, c, msgs, force_axis="x")
     msgs.append(f"{len(widths)} bins, width {widths.mean():.4g}" +
                 ("" if np.allclose(widths, widths[0]) else " (mean)"))
 

@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 11;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 12;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -334,7 +334,53 @@ function colOptions(sel, blank) {
 function fillColumns(pref = {}) {
   fillColumnsInner(pref);
   decorateFormulas();
+  buildRefExtra();
 }
+
+// ---- mean/median lines of other columns
+let refPending = null;
+const REF_COLOURS = [['', 'Line colour setting'], ['black', 'Black'], ['0.45', 'Grey'], ['#BE5103', 'Orange'],
+  ['#D55E00', 'Vermilion'], ['#c8372d', 'Red'], ['#0072B2', 'Blue'], ['#009E73', 'Green'], ['#CC79A7', 'Pink']];
+function getRefExtra() {
+  return [...document.querySelectorAll('.ref-row')].map((r) => ({
+    col: r.querySelector('.r-col').value, axis: r.querySelector('.r-axis').value,
+    err: r.querySelector('.r-err').value, color: r.querySelector('.r-color').value,
+  })).filter((o) => o.col);
+}
+function addRefRow(o = {}) {
+  if (!info) return;
+  const nums = info.columns.filter((c, i) => info.numeric[i]);
+  const opt = (list, want, blank) => (blank ? `<option value="">${blank}</option>` : '') +
+    list.map((c) => `<option ${c === want ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  const r = document.createElement('div');
+  r.className = 'ref-row';
+  r.innerHTML = `<button type="button" class="rm" title="Remove">✕</button>
+    <div class="row"><label>Column</label><select class="r-col">${opt(nums, o.col ?? nums[0])}</select></div>
+    <div class="row"><label>Draw as</label><select class="r-axis">
+      <option value="y">Horizontal line (Y axis)</option><option value="x">Vertical line (X axis)</option></select></div>
+    <div class="row"><label>Error col.</label><select class="r-err">${opt(nums, o.err, 'none (for weighted mean)')}</select></div>
+    <div class="row"><label>Colour</label><select class="r-color">${REF_COLOURS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
+  r.querySelector('.r-axis').value = o.axis || 'y';
+  r.querySelector('.r-color').value = o.color || '';
+  const paint = () => r.style.setProperty('--rc', /^#|black/.test(r.querySelector('.r-color').value) ? r.querySelector('.r-color').value : '');
+  paint();
+  r.querySelector('.rm').addEventListener('click', () => { r.remove(); scheduleRender(0); });
+  r.addEventListener('change', () => { paint(); scheduleRender(0); });
+  $('refExtraList').appendChild(r);
+  updateVisibility();
+}
+function buildRefExtra() {
+  if (!info) return;
+  const want = refPending || getRefExtra();
+  refPending = null;
+  $('refExtraList').innerHTML = '';
+  want.filter((o) => info.columns.includes(o.col)).forEach((o) => addRefRow(o));
+}
+$('refExtraAdd').addEventListener('click', () => {
+  addRefRow();
+  if (!$('refmean').checked && !$('refmedian').checked && !$('refwmean').checked) $('refmean').checked = true;
+  scheduleRender(0);
+});
 function fillColumnsInner(pref = {}) {
   const cols = info.columns;
   const firstNum = cols.find((c, i) => info.numeric[i]);
@@ -470,6 +516,7 @@ function updateVisibility() {
   const mappable = k === 'scatter' || k === 'linemarkers' || polar;
   $('polarRows').hidden = !polar;
   $('refcustom').hidden = $('refcolor').value !== 'custom';
+  document.querySelectorAll('.ref-row .r-axis').forEach((el) => { el.closest('.row').hidden = k === 'hist'; });
   const xyk = ['scatter', 'linemarkers', 'line', 'step', 'polar'].includes(k);
   $('groupRows').hidden = !xyk;
   $('groupOpts').hidden = !$('groupstats').checked;
@@ -523,6 +570,7 @@ function getConfig({ withExcluded = true } = {}) {
   c.series = getSeries();
   c.header = $('header').value;
   c.allsheets = $('allsheets').checked;
+  c.refextra = getRefExtra();
   c.ss = ssConfig();
   c.view = currentView;
   c.sheetcol = $('sheetcol').value;
@@ -544,6 +592,7 @@ function applyConfig(c) {
   }
   if (c.header) $('header').value = c.header;
   if ('allsheets' in c) $('allsheets').checked = !!c.allsheets;
+  if (Array.isArray(c.refextra)) { refPending = c.refextra; if (info) buildRefExtra(); }
   if (c.ss) applySS(c.ss);
   if (c.view) setView(c.view);
   if (c.sheetcol) $('sheetcol').value = c.sheetcol;
