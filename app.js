@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 7;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 8;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -87,7 +87,7 @@ async function loadData(sheet = null) {
     const path = '/tmp/' + curFile.name.replace(/[^\w.\-]/g, '_');
     py.FS.writeFile(path, curFile.bytes);
     info = pyCall('plotter.load_file(*_args)', [path, curFile.name, $('header').value, sheet ?? curFile.sheet,
-      +$('headerrow').value || 1, +$('skipafter').value || 0, $('allsheets').checked]);
+      +$('headerrow').value || 1, +$('skipafter').value || 0, $('allsheets').checked, $('sheetcol').value || 'Sheet']);
     if (getCalc().length) applyCalcPy();
     curFile.sheet = info.sheet;
     $('allsheetsRow').hidden = info.sheets.length < 2;
@@ -137,11 +137,13 @@ $('pasteLoad').addEventListener('click', () => {
 function getCalc() {
   return [...document.querySelectorAll('.calc-row')].map((r) => ({
     name: r.querySelector('.c-name').value.trim(), expr: r.querySelector('.c-expr').value.trim(),
+    ...(r.dataset.fx ? { fx: true } : {}),
   })).filter((c) => c.name && c.expr);
 }
 function addCalcRow(c = {}) {
   const r = document.createElement('div');
   r.className = 'calc-row';
+  if (c.fx) r.dataset.fx = '1';
   r.innerHTML = `<input type="text" class="c-name" placeholder="name" value="${esc(c.name || '')}">
     <input type="text" class="c-expr" placeholder="formula" value="${esc(c.expr || '')}">
     <button type="button" title="Remove">✕</button>`;
@@ -150,6 +152,118 @@ function addCalcRow(c = {}) {
   $('calcList').appendChild(r);
 }
 let calcTimer = null;
+
+// ---------------------------------------------------------------- formulas in column pickers
+// Choosing "ƒ Formula…" in any column menu opens a formula box under it. Each formula becomes a
+// calculated column named after the formula itself, so it is saved, shown in the data table and
+// in the Calculated columns panel.
+const colSelects = () => [$('x'), ...document.querySelectorAll('select[data-col]'),
+  ...document.querySelectorAll('.series .s-y, .series .s-yerr, .series .s-xerr')];
+const calcRows = () => [...document.querySelectorAll('.calc-row')];
+const calcRowByName = (n) => calcRows().find((r) => r.querySelector('.c-name').value.trim() === n);
+
+function selectState() {
+  const cols = Object.fromEntries([...document.querySelectorAll('select[data-col]')].map((e) => [e.id, e.value]));
+  return { x: $('x').value, series: getSeries(), cols };
+}
+
+function fxBox(sel, expr = '', err = '') {
+  const row = sel.closest('.row');
+  let box = row.nextElementSibling;
+  if (!box || !box.classList.contains('fx-box')) {
+    box = document.createElement('div');
+    box.className = 'fx-box';
+    box.innerHTML = `<input type="text" class="fx-input" spellcheck="false"
+        placeholder='e.g. "Angle to Caxis" + "Grain Orientation"'>
+      <div class="fx-err"></div>
+      <div class="fx-hint">Columns in "quotes" · + − * / ^ · sind() cosd() wrap90() sqrt() log10() abs() mean() …</div>`;
+    row.after(box);
+    const inp = box.querySelector('.fx-input');
+    let t = null;
+    inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => commitFormula(box), 800); });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(t); commitFormula(box); } });
+  }
+  box._sel = sel;
+  box._old = sel.value !== FX ? sel.value : (box._old || '');
+  const inp = box.querySelector('.fx-input');
+  if (document.activeElement !== inp) inp.value = expr;
+  box.querySelector('.fx-err').textContent = err;
+  return box;
+}
+
+function commitFormula(box) {
+  const sel = box._sel;
+  const expr = box.querySelector('.fx-input').value.trim();
+  if (!expr || !info) return;
+  const old = box._old;                                   // formula column this picker showed before
+  const st = selectState();
+  let row = old && calcRowByName(old);
+  if (row && row.dataset.fx) {
+    row.querySelector('.c-name').value = expr;
+    row.querySelector('.c-expr').value = expr;
+  } else {
+    row = calcRowByName(expr);
+    if (!row) { addCalcRow({ name: expr, expr, fx: true }); row = calcRowByName(expr); }
+  }
+  try { applyCalcPy(); } catch (e) { showError(e); return; }
+  const bad = (info.calc_errors || []).find((m) => m.startsWith(expr + ':'));
+  if (bad) {
+    box.querySelector('.fx-err').textContent = bad.slice(expr.length + 1).trim();
+    return;
+  }
+  // point this picker (and any other showing the old formula) at the new column
+  const swap = (v) => (v === old && old ? expr : v);
+  st.x = swap(st.x);
+  for (const k in st.cols) st.cols[k] = swap(st.cols[k]);
+  st.series = st.series.map((s) => ({ ...s, y: swap(s.y), yerr: swap(s.yerr), xerr: swap(s.xerr) }));
+  if (sel.id === 'x') st.x = expr;
+  else if (sel.hasAttribute('data-col')) st.cols[sel.id] = expr;
+  else {
+    const i = [...document.querySelectorAll('.series')].indexOf(sel.closest('.series'));
+    const key = sel.classList.contains('s-y') ? 'y' : sel.classList.contains('s-yerr') ? 'yerr' : 'xerr';
+    if (st.series[i]) st.series[i][key] = expr;
+  }
+  fillColumns(st);
+  showTable();
+  scheduleRender(0);
+}
+
+function decorateFormulas() {
+  // show the formula under every picker that is set to a formula column; tidy unused formulas
+  const used = new Set();
+  for (const sel of colSelects()) {
+    const row = sel.closest('.row');
+    const next = row && row.nextElementSibling;
+    const r = calcRowByName(sel.value);
+    if (sel.value === FX) { fxBox(sel); continue; }
+    if (r && r.dataset.fx) { used.add(sel.value); fxBox(sel, r.querySelector('.c-expr').value); }
+    else if (next && next.classList.contains('fx-box')) next.remove();
+  }
+  let removed = false;
+  for (const r of calcRows()) {
+    if (r.dataset.fx && !used.has(r.querySelector('.c-name').value.trim())) { r.remove(); removed = true; }
+  }
+  return removed;
+}
+
+// "ƒ Formula…" picked: open the box instead of plotting a missing column
+for (const ev of ['input', 'change']) {
+  document.addEventListener(ev, (e) => {
+    const sel = e.target;
+    if (sel.tagName !== 'SELECT') return;
+    if (sel.value === FX) {
+      e.stopImmediatePropagation();
+      if (ev === 'change') { const b = fxBox(sel); b.querySelector('.fx-input').focus(); }
+      return;
+    }
+  }, true);
+}
+document.addEventListener('change', (e) => {
+  if (e.target.tagName === 'SELECT' && info && colSelects().includes(e.target)) {
+    if (decorateFormulas()) { applyCalcPy(); }
+  }
+});
+
 function applyCalcPy() {
   info = pyCall('plotter.add_columns(_args[0])', [JSON.stringify(getCalc())]);
   $('calcErr').textContent = (info.calc_errors || []).join('\n');
@@ -166,6 +280,8 @@ function applyCalc() {
 }
 $('calcAdd').addEventListener('click', () => addCalcRow());
 $('allsheets').addEventListener('change', () => { excluded.clear(); curFile && py && loadData(); });
+let sheetcolTimer = null;
+$('sheetcol').addEventListener('input', () => { clearTimeout(sheetcolTimer); sheetcolTimer = setTimeout(() => { if ($('allsheets').checked && curFile && py) loadData(); }, 700); });
 
 let headerTimer = null;
 function reloadHeader() {
@@ -197,12 +313,18 @@ $('sheet').addEventListener('change', () => { excluded.clear(); loadData($('shee
 
 // ---------------------------------------------------------------- columns & series
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
+const FX = '__fx__';
 function colOptions(sel, blank) {
   return (blank ? `<option value="">${blank}</option>` : '') +
-    info.columns.map((c) => `<option ${c === sel ? 'selected' : ''}>${esc(c)}</option>`).join('');
+    info.columns.map((c) => `<option ${c === sel ? 'selected' : ''}>${esc(c)}</option>`).join('') +
+    `<option value="${FX}">ƒ Formula…</option>`;
 }
 
 function fillColumns(pref = {}) {
+  fillColumnsInner(pref);
+  decorateFormulas();
+}
+function fillColumnsInner(pref = {}) {
   const cols = info.columns;
   const firstNum = cols.find((c, i) => info.numeric[i]);
   let x = pref.x;
@@ -346,6 +468,7 @@ function getConfig({ withExcluded = true } = {}) {
   c.series = getSeries();
   c.header = $('header').value;
   c.allsheets = $('allsheets').checked;
+  c.sheetcol = $('sheetcol').value;
   c.calc = getCalc();
   c.headerrow = +$('headerrow').value || 1;
   c.skipafter = +$('skipafter').value || 0;
@@ -364,6 +487,7 @@ function applyConfig(c) {
   }
   if (c.header) $('header').value = c.header;
   if ('allsheets' in c) $('allsheets').checked = !!c.allsheets;
+  if (c.sheetcol) $('sheetcol').value = c.sheetcol;
   if (Array.isArray(c.calc)) { $('calcList').innerHTML = ''; c.calc.forEach(addCalcRow); if (c.calc.length) $('calcPanel').open = true; }
   if (c.headerrow) $('headerrow').value = c.headerrow;
   if (c.skipafter !== undefined) $('skipafter').value = c.skipafter;

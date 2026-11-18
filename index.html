@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -68,7 +68,10 @@
           <p class="hint">Rows above the header (instrument metadata etc.) are ignored. Tip: click a row in <b>Raw file</b> below the plot to use it as the header.</p>
         </div>
         <div class="row" id="sheetRow" hidden><label for="sheet">Sheet</label><select id="sheet"></select></div>
-        <label class="check" id="allsheetsRow" hidden><input type="checkbox" id="allsheets"> Combine all sheets (adds a <b>Sheet</b> column)</label>
+        <div id="allsheetsRow" hidden>
+          <label class="check"><input type="checkbox" id="allsheets"> Combine all sheets into one table</label>
+          <div class="row"><label for="sheetcol">Sheet name column</label><input type="text" id="sheetcol" value="Sheet" title="Name of the column that holds each row's sheet name, e.g. Grain Orientation"></div>
+        </div>
         <details class="sub" id="calcPanel">
           <summary>Calculated columns</summary>
           <p class="hint">Make a new column from others, e.g. <code>90 - `Angle from Horizontal`</code> or <code>Dpar / Dper</code>. Put names with spaces in `backticks`; <code>np.sin</code>, <code>np.degrees</code>, <code>np.abs</code> etc. work.</p>
@@ -385,6 +388,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="app.js?v=9"></script>
 </body>
 </html>

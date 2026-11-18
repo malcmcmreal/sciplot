@@ -140,7 +140,8 @@ def _sheet_frame(xl, sheet, header, headerrow, skipafter):
     return df
 
 
-def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, allsheets=False):
+def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, allsheets=False,
+              sheetcol="Sheet"):
     """Load csv / tsv / txt / dat / xlsx / xls into the active DataFrame.
 
     header: "auto" | "yes" (first row) | "no" | "row" (use row `headerrow`, 1-based,
@@ -169,7 +170,7 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, a
             for sh, v in frames.items():
                 if tuple(v.columns) == common:
                     v = v.copy()
-                    v.insert(0, "Sheet", sh)
+                    v.insert(0, (sheetcol or "Sheet").strip() or "Sheet", sh)
                     parts.append(v)
             df = _coerce(pd.concat(parts, ignore_index=True))
             skipped = [sh for sh, v in frames.items() if tuple(v.columns) != common]
@@ -192,21 +193,75 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, a
     return _finish_load(df, raw_rows, sheets, sheet, [])
 
 
+# ------------------------------------------------------------ formulas
+def _wrap(x, period):
+    x = np.asarray(x, float)
+    return (x + period / 2) % period - period / 2
+
+
+FORMULA_FUNCS = {
+    "pi": np.pi, "e": np.e,
+    "sin": np.sin, "cos": np.cos, "tan": np.tan, "arcsin": np.arcsin, "arccos": np.arccos,
+    "arctan": np.arctan, "arctan2": np.arctan2, "asin": np.arcsin, "acos": np.arccos, "atan": np.arctan,
+    "atan2": np.arctan2,
+    "sind": lambda x: np.sin(np.radians(x)), "cosd": lambda x: np.cos(np.radians(x)),
+    "tand": lambda x: np.tan(np.radians(x)),
+    "degrees": np.degrees, "radians": np.radians,
+    "sqrt": np.sqrt, "abs": np.abs, "log": np.log, "ln": np.log, "log10": np.log10, "exp": np.exp,
+    "round": np.round, "floor": np.floor, "ceil": np.ceil, "sign": np.sign,
+    "min": np.minimum, "max": np.maximum, "clip": np.clip, "where": np.where, "mod": np.mod,
+    "wrap90": lambda x: _wrap(x, 180),     # angle folded into −90 … +90 (axial data)
+    "wrap180": lambda x: _wrap(x, 360),    # angle folded into −180 … +180
+    "wrap360": lambda x: np.mod(np.asarray(x, float), 360),
+    "mean": lambda x: np.nanmean(x) + 0 * np.asarray(x, float),
+    "median": lambda x: np.nanmedian(x) + 0 * np.asarray(x, float),
+    "std": lambda x: np.nanstd(x, ddof=1) + 0 * np.asarray(x, float),
+    "np": np,
+}
+
+
+def eval_formula(expr, df):
+    """Evaluate a formula over the table. Column names can be written as "Name", 'Name',
+    `Name` or (if they are plain words) Name. ^ means power. Functions: FORMULA_FUNCS."""
+    import re
+    cols = list(df.columns)
+    colset = set(cols)
+
+    def quoted(m):
+        name = m.group(2)
+        return f"`{name}`" if name in colset else m.group(0)
+
+    e = re.sub(r'(["\'])(.+?)\1', quoted, expr)                # "Angle to Caxis" -> `Angle to Caxis`
+    e = e.replace("^", "**").replace("×", "*").replace("÷", "/").replace("−", "-")
+    e = re.sub(r"`([^`]+)`", lambda m: f"__c[{m.group(1)!r}]", e)
+    for nm in re.findall(r"__c\[(.+?)\]", e):
+        if eval(nm) not in colset:
+            raise ValueError(f"no column called {eval(nm)}")
+    ns = dict(FORMULA_FUNCS)
+    ns["__c"] = {c: df[c] for c in cols}
+    for c in cols:                                              # plain-word column names work bare
+        if isinstance(c, str) and c.isidentifier() and c not in ns:
+            ns[c] = df[c]
+    out = eval(compile(e, "<formula>", "eval"), {"__builtins__": {}}, ns)
+    if np.isscalar(out):
+        out = np.full(len(df), out)
+    return pd.to_numeric(pd.Series(np.asarray(out), index=df.index), errors="coerce")
+
+
 def add_columns(calc_json):
-    """Add calculated columns: [{"name": ..., "expr": ...}]. Expressions use column names
-    (in `backticks` if they contain spaces), numbers, + - * / ** and numpy functions
-    such as np.sin, np.degrees, np.abs. Returns load-style JSON for the updated table."""
+    """Add calculated columns: [{"name": ..., "expr": ...}] (see eval_formula). Later formulas
+    can use earlier ones. Returns load-style JSON for the updated table."""
     df = DATA["base"].copy()
     msgs = []
-    env = {"np": np, "pi": np.pi}
     for item in json.loads(calc_json or "[]"):
         name, expr = str(item.get("name", "")).strip(), str(item.get("expr", "")).strip()
         if not name or not expr:
             continue
         try:
-            df[name] = pd.to_numeric(df.eval(expr, local_dict=env, engine="python"), errors="coerce")
+            df[name] = eval_formula(expr, df)
         except Exception as e:  # report and carry on with the other columns
-            msgs.append(f"{name}: {e}")
+            msg = str(e).replace("__c[", "[")
+            msgs.append(f"{name}: {type(e).__name__ if not msg else msg}")
     return _finish_load(df, DATA["raw"], DATA["sheets"], DATA["sheet"], DATA["skipped"], keep_base=True,
                         calc_msgs=msgs)
 
