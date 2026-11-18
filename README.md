@@ -54,7 +54,7 @@ Each panel can plot a different sheet of the workbook: activate the panel, then 
 - one shared legend / colour key for the whole figure (right or below) instead of one per panel; panels colouring by the same column always share one colour scale
 - automatic panel letters, e.g. (a) / a / A, outside or inside each panel
 
-Each panel can also hide its own X axis, Y axis or both (Axes section). Exports, saved plots and `.sciplot` projects store the whole figure. The group-summary CSV gains a `panel` column.
+Each panel can also hide its own X axis, Y axis or both, and set its own size (Axes section → *This panel's size*): how many columns and rows it spans (e.g. one wide panel across the top) and a fixed height ÷ width. **Column widths** and **Row heights** under Figure layout take relative values such as `2, 1`. Exports, saved plots and `.sciplot` projects store the whole figure. The group-summary CSV gains a `panel` column.
 
 ## Subsampling tab
 

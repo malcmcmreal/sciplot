@@ -1949,8 +1949,21 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
     groups.clear()
     n = max(len(panels), 1)
     cols = int(_num(L.get("cols")) or math.ceil(math.sqrt(n)))
-    cols = max(1, min(cols, n))
-    rows = math.ceil(n / cols)
+    cols = max(1, min(cols, max(n, max([int(_num(q.get("spanc")) or 1) for q in panels] or [1]))))
+    # place panels row by row; a panel may span several columns / rows (patchwork-style)
+    spans, taken = [], set()
+    for q in panels:
+        sc = max(1, min(int(_num(q.get("spanc")) or 1), cols))
+        sr = max(1, int(_num(q.get("spanr")) or 1))
+        k = 0
+        while True:
+            r0, c0 = divmod(k, cols)
+            if c0 + sc <= cols and not any((r0 + a, c0 + b) in taken for a in range(sr) for b in range(sc)):
+                break
+            k += 1
+        taken |= {(r0 + a, c0 + b) for a in range(sr) for b in range(sc)}
+        spans.append((r0, c0, sr, sc))
+    rows = max([r0 + sr for r0, _, sr, _ in spans] or [1])
     width = LAYOUT_WIDTHS.get(L.get("size", "double")) or _num(L.get("width")) or 7.2
     if L.get("size") == "custom":
         width = _num(L.get("width")) or 7.2
@@ -1960,10 +1973,31 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         if pc.get("kind") != "polar":
             return aspect
         return {"half": 0.58}.get(pc.get("polstyle", "quarter"), 1.0)
-    ratios = [max([_shape(panels[k]) for k in range(r * cols, min((r + 1) * cols, n)) if k < len(panels)]
-                  or [aspect]) for r in range(rows)]
-    height = _num(L.get("height")) if L.get("size") == "custom" and _num(L.get("height")) else \
-        (width / cols) * sum(ratios) + 0.25
+    def _ratios(txt, k):
+        try:
+            v = [float(t) for t in str(txt or "").replace(";", ",").split(",") if t.strip()]
+        except ValueError:
+            v = []
+        v = [x for x in v if x > 0]
+        return (v + [v[-1]] * k)[:k] if v else None
+    wr = _ratios(L.get("colwidths"), cols) or [1.0] * cols
+    hr = _ratios(L.get("rowheights"), rows)
+    if hr is None:          # auto: each row as tall as its tallest single-row panel needs
+        unit = width / sum(wr)
+        hr = []
+        for r in range(rows):
+            need = []
+            for q, (r0, c0, sr, sc) in zip(panels, spans):
+                if r0 == r and sr == 1:
+                    pa = _num(q.get("paspect")) or _shape(q)
+                    need.append(pa * sum(wr[c0:c0 + sc]) / (sum(wr) / cols))
+            hr.append(max(need or [aspect]))
+        ratios = hr
+        height_auto = unit * (sum(wr) / cols) * sum(ratios) + 0.25
+    else:
+        ratios = hr
+        height_auto = (width / cols) * sum(ratios) * aspect + 0.25
+    height = _num(L.get("height")) if L.get("size") == "custom" and _num(L.get("height")) else height_auto
     base = panels[active] if panels else {}
     cells, results = [], []
     legmode = L.get("legend", "each")
@@ -1974,9 +2008,9 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         sp = _num(L.get("spacing"))
         sp = 0.02 if sp is None else sp
         fig.get_layout_engine().set(wspace=sp, hspace=sp, w_pad=0.03, h_pad=0.03)
-        gs = fig.add_gridspec(rows, cols, height_ratios=ratios)
+        gs = fig.add_gridspec(rows, cols, height_ratios=ratios, width_ratios=wr)
     for i, pc in enumerate(panels):
-        r, col = divmod(i, cols)
+        r, col, sr, sc = spans[i]
         sheet = pc.get("sheet") or DATA.get("sheet")
         ex = P.get("excluded", [])
         if isinstance(ex, dict):
@@ -1984,7 +2018,10 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         pc = {**pc, "_multi": True, "excluded": ex, "_sharedkey": shared}
         n0 = len(groups)
         with plt.rc_context(_style(pc)):
-            ax = fig.add_subplot(gs[r, col], projection="polar" if pc.get("kind") == "polar" else None)
+            ax = fig.add_subplot(gs[r:r + sr, col:col + sc], projection="polar" if pc.get("kind") == "polar" else None)
+            ax._sp_cell = (sr, sc)
+            if _num(pc.get("paspect")) and pc.get("kind") != "polar":
+                ax.set_box_aspect(_num(pc.get("paspect")))       # this panel's own height ÷ width
             try:
                 msgs, pts = draw_panel(fig, ax, pc, _panel_frame(pc.get("sheet")), groups)
             except Exception as e:
@@ -2005,14 +2042,18 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         _share_limits(cells, "x", L["sharex"])
     if L.get("sharey", "none") != "none":
         _share_limits(cells, "y", L["sharey"])
-    occupied = {(r, col) for _, _, r, col in cells}
+    occupied = set()
+    for ax, _, r, col in cells:
+        sr, sc = getattr(ax, "_sp_cell", (1, 1))
+        occupied |= {(r + a, col + b) for a in range(sr) for b in range(sc)}
     inner = L.get("inner", "keep")
     for ax, pc, r, col in cells:
         if ax.name == "polar":
             continue
-        below = (r + 1, col) in occupied
+        sr, sc = getattr(ax, "_sp_cell", (1, 1))
+        below = any((r + sr, col + b) in occupied for b in range(sc))
         left_of = col > 0
-        last_in_row = (r, col + 1) not in occupied
+        last_in_row = (r, col + sc) not in occupied
         my_ = L.get("mirrory", "none")
         mirrored = (my_ == "right" and last_in_row and col > 0) or my_ == "all"
         if inner in ("titles", "all"):
@@ -2025,7 +2066,7 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
                 ax.tick_params(axis="x", which="both", labelbottom=False)
             if left_of:
                 ax.tick_params(axis="y", which="both", labelleft=False)
-        last_in_row = (r, col + 1) not in occupied
+        last_in_row = (r, col + sc) not in occupied
         my = L.get("mirrory", "none")
         if (my == "right" and last_in_row and col > 0) or my == "all":
             # Y axis (tick labels + title) on the right-hand side of this panel

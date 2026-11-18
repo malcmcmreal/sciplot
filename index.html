@@ -240,6 +240,13 @@
           <label class="check"><input type="checkbox" id="hidey" data-cfg> Hide Y axis</label>
           <label class="check"><input type="checkbox" id="hideaxes" data-cfg> Hide all axes</label>
         </div>
+        <div id="panelSizeRows" hidden>
+          <h3 class="subhead">This panel's size</h3>
+          <div class="row"><label for="spanc" title="How many grid columns this panel spans">Width (columns)</label><input type="number" id="spanc" data-cfg min="1" max="6" step="1" placeholder="1"></div>
+          <div class="row"><label for="spanr" title="How many grid rows this panel spans">Height (rows)</label><input type="number" id="spanr" data-cfg min="1" max="6" step="1" placeholder="1"></div>
+          <div class="row"><label for="paspect" title="Fix this panel's plot area to height ÷ width (e.g. 1 = square). Blank: fill its cell.">Height ÷ width</label><input type="number" id="paspect" data-cfg min="0.1" max="5" step="0.05" placeholder="auto"></div>
+          <p class="hint">Column widths and row heights for the whole grid are under Figure layout.</p>
+        </div>
         <div class="row"><label for="xrot">X tick angle</label><input type="number" id="xrot" data-cfg value="0" step="15" min="0" max="90"></div>
             </details>
 
@@ -386,6 +393,8 @@
           <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
         <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
         <div class="row"><label for="lay-aspect">Panel height ÷ width</label><input type="number" id="lay-aspect" data-lay value="0.75" min="0.2" max="3" step="0.05"></div>
+        <div class="row"><label for="lay-colwidths" title="Relative widths, e.g. 2, 1 makes the first column twice as wide">Column widths</label><input type="text" id="lay-colwidths" data-lay placeholder="equal, e.g. 2, 1"></div>
+        <div class="row"><label for="lay-rowheights" title="Relative heights, e.g. 1, 0.5. Blank: each row fits its panels">Row heights</label><input type="text" id="lay-rowheights" data-lay placeholder="auto, e.g. 1, 0.5"></div>
         <div class="row"><label for="lay-spacing" title="Automatic spacing between panels (0 = as tight as the labels allow)">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
         <div class="row"><label for="lay-gapx" title="Extra gap between columns after the automatic layout, in mm. Negative pulls panels closer together (useful once inner labels are hidden).">Column gap ± mm</label><input type="number" id="lay-gapx" data-lay value="0" min="-30" max="30" step="0.5"></div>
         <div class="row"><label for="lay-gapy" title="Extra gap between rows after the automatic layout, in mm. Negative pulls panels closer together.">Row gap ± mm</label><input type="number" id="lay-gapy" data-lay value="0" min="-30" max="30" step="0.5"></div>
@@ -584,6 +593,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=26"></script>
+  <script type="module" src="app.js?v=27"></script>
 </body>
 </html>
