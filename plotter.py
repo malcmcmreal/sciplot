@@ -1405,9 +1405,11 @@ def _legend(fig, ax, c, series, extra):
     if c.get("_sharedkey"):
         # one key for the whole figure: series, groups and mapped colour/size/shape go there;
         # entries carrying this panel's own numbers (fits, "mean = …") stay on the panel
-        ax._sp_keys = [(hh, ll) for hh, ll in zip(h, l) if "=" not in ll] + list(extra)
+        ax._sp_keys = ([(hh, ll) for hh, ll in zip(h, l) if "=" not in ll]
+                       + [e for e in extra if "=" not in e[1]])
         keep = [k for k, ll in enumerate(l) if "=" in ll]
-        h, l, extra = [h[k] for k in keep], [l[k] for k in keep], []
+        h, l = [h[k] for k in keep], [l[k] for k in keep]
+        extra = [e for e in extra if "=" in e[1]]    # e.g. "line length ∝ Dpar (longest = 3.87)"
         if leg in ("below", "outside"):
             leg = "best"
     h += [e[0] for e in extra]
@@ -1836,17 +1838,27 @@ def _shared_key(fig, axes, mode, base):
             seen.add(key)
             H.append(h)
             L.append(l)
+    # panels share a colour bar only when they show the same column on the same scale;
+    # a panel with its own scale keeps its own bar
     cbars = {}
     for ax in axes:
         m = getattr(ax, "_sp_cbar", None)
         if m is not None:
-            lab = m.c.get("huelabel") or m.hue["col"]
-            cbars.setdefault(lab, m)
+            nm = m.hue["norm"]
+            key = (m.hue["col"], m.c.get("huelabel") or m.hue["col"], round(float(nm.vmin), 9),
+                   round(float(nm.vmax), 9), getattr(m.hue["cmap"], "name", ""),
+                   isinstance(nm, matplotlib.colors.LogNorm))
+            cbars.setdefault(key, [m, []])[1].append(ax)
     loc = "right" if mode == "right" else "bottom"
-    for lab, m in cbars.items():
+    for key, (m, group) in cbars.items():
+        lab = key[1]
         sm = matplotlib.cm.ScalarMappable(norm=m.hue["norm"], cmap=m.hue["cmap"])
-        cb = fig.colorbar(sm, ax=axes, location=loc, pad=0.02, fraction=0.04, aspect=35,
-                          shrink=0.8, extend=m._extend())
+        if len(group) == 1 and len(cbars) > 1:
+            cb = fig.colorbar(sm, ax=group[0], pad=0.02, fraction=0.05, aspect=25,
+                              shrink=0.7 if group[0].name == "polar" else 1.0, extend=m._extend())
+        else:
+            cb = fig.colorbar(sm, ax=group if len(cbars) > 1 else axes, location=loc, pad=0.02,
+                              fraction=0.04, aspect=35, shrink=0.8, extend=m._extend())
         cb.set_label(lab)
         if isinstance(m.hue["norm"], matplotlib.colors.LogNorm):
             cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))

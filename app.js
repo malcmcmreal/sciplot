@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 21;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 22;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -1570,6 +1570,16 @@ function movePanel(d) {
   scheduleRender(0);
 }
 window.sciplotState = () => ({ last, figure });   // read-only peek for debugging/tests
+// a new "Colour by" column gets its own range and label: values set for the previous
+// column (e.g. copied from a duplicated panel) would otherwise squash the new one
+let lastHue = null;
+['focus', 'mousedown', 'keydown'].forEach((ev) => $('hue').addEventListener(ev, () => { if (ev !== 'keydown' || lastHue === null) lastHue = $('hue').value; }));
+$('hue').addEventListener('change', () => {
+  if (lastHue !== null && $('hue').value !== lastHue) {
+    ['huemin', 'huemax', 'huelabel'].forEach((id) => { if ($(id)) $(id).value = ''; });
+  }
+  lastHue = $('hue').value;
+});
 $('panelChips').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (b) activatePanel(+b.dataset.i); });
 $('panelDup').addEventListener('click', () => addPanel(true));
 $('panelBlank').addEventListener('click', () => addPanel(false));
