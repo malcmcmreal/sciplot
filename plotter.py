@@ -28,6 +28,25 @@ except ImportError:       # plotter.py still works without it (matplotlib-only f
 
 DATA = {"df": None}
 
+
+def _clean(o):
+    """Replace NaN / ±inf with None (JSON null) so the browser can parse results."""
+    if isinstance(o, float):
+        return o if np.isfinite(o) else None
+    if isinstance(o, (np.floating,)):
+        return float(o) if np.isfinite(o) else None
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, dict):
+        return {k: _clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_clean(v) for v in o]
+    return o
+
+
+def _dumps(o):
+    return json.dumps(_clean(o), allow_nan=False)
+
 # Okabe & Ito (2008) colour-blind-safe palette, black first
 PALETTES = {
     "okabe-ito": ["#000000", "#E69F00", "#56B4E9", "#009E73",
@@ -280,7 +299,7 @@ def _finish_load(df, raw_rows, sheets, sheet, skipped, keep_base=False, calc_msg
     DATA["df"] = df
     head = df.head(20000)    # values for tooltips; the page table shows the first 2000
     preview = head.astype(object).where(head.notna(), "").values.tolist()
-    return json.dumps({
+    return _dumps({
         "columns": list(df.columns),
         "numeric": [bool(pd.api.types.is_numeric_dtype(df[c])) for c in df.columns],
         "nrows": int(len(df)),
@@ -1453,7 +1472,11 @@ def _geometry(fig, ax, points=None):
             phi = np.asarray(pp.pop("phi", []), float)
             r = np.asarray([q[2] for q in pp["pts"]], float)
             xy = ax.transData.transform(np.c_[phi, r]) if len(phi) else np.zeros((0, 2))
-            pp["px"] = [[float(a / W), float(1 - b / H)] for a, b in xy]
+            r0, r1 = sorted(ax.get_ylim())
+            t0, t1 = float(ax._sp_tx(ax._sp_amin)), float(ax._sp_tx(ax._sp_amax))
+            inside = (r >= r0) & (r <= r1) & (phi >= min(t0, t1) - 1e-9) & (phi <= max(t0, t1) + 1e-9)
+            pp["px"] = [[float(a / W), float(1 - b / H)] if ok else [None, None]
+                        for (a, b), ok in zip(xy, inside)]
         return {"polar": True, "x0": p.x0, "x1": p.x1, "y0": 1 - p.y1, "y1": 1 - p.y0}
     return {"x0": p.x0, "x1": p.x1, "y0": 1 - p.y1, "y1": 1 - p.y0,
             "xlim": list(map(float, ax.get_xlim())), "ylim": list(map(float, ax.get_ylim())),
@@ -1478,7 +1501,7 @@ def render(cfg_json, fmt="png", dpi=200, meta=""):
         pp.pop("phi", None)
     plt.close(fig)
     pal = _colors(c.get("palette", "okabe-ito"), len(c.get("series", [])))
-    return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
+    return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
                        "geom": geom, "points": points,
                        "colors": [s.get("color") or pal[i] for i, s in enumerate(c.get("series", []))],
                        "swatches": _colors(c.get("palette", "okabe-ito"), 8),
@@ -1710,7 +1733,7 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
         md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
         fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
     plt.close(fig)
-    return json.dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
+    return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
                        "N": int(N), "Nref": int(len(x_ref)), "n": int(n), "start": start})
 
 
@@ -1729,13 +1752,13 @@ def ss_unique(col, src=""):
     """Distinct values of a column (for the subset menu), up to 300."""
     df = DATA.get("tables", {}).get(src) if src else DATA["df"]
     if df is None or col not in df.columns:
-        return json.dumps([])
+        return _dumps([])
     v = df[col].dropna().unique()
     try:
         v = sorted(v)
     except TypeError:
         pass
-    return json.dumps([_fmt_cell(x) for x in v[:300]])
+    return _dumps([_fmt_cell(x) for x in v[:300]])
 
 
 # ------------------------------------------------- standalone use (offline)

@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 12;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 13;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -811,7 +811,10 @@ function nearest(px, py_, maxDist = 10) {
     for (let k = 0; k < s.pts.length; k++) {
       const [row, x, y, ex] = s.pts[k];
       let qx, qy;
-      if (s.px) { qx = s.px[k][0] * w; qy = s.px[k][1] * h; }
+      if (s.px) {
+        if (s.px[k][0] == null || s.px[k][1] == null) continue;   // point outside the plotted range
+        qx = s.px[k][0] * w; qy = s.px[k][1] * h;
+      }
       else {
         if ((last.geom.xlog && x <= 0) || (last.geom.ylog && y <= 0)) continue;
         [qx, qy] = dataToPx(x, y);
