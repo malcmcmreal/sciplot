@@ -577,6 +577,12 @@ def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
     k = int(c.get("refband") or 0)
     kk = k or 1
     st = _stats(vals, err)
+    rc = c.get("refcolor") or ""
+    if rc == "custom":
+        rc = c.get("refcustom") or ""
+    color = rc or color                       # "" = follow the series colour
+    lw = _num(c.get("refwidth")) or 0.9
+    band_alpha = _num(c.get("refalpha")) or 0.12
     if ax.name == "polar":
         line, span = _polar_ref(ax, axis)
     else:
@@ -597,10 +603,10 @@ def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
         else:
             msgs.append(f"{prefix or 'Weighted mean'}: needs an error column")
     for key, v, e, label in todo:
-        line(v, color=color, linestyle=REF_STYLES[key], linewidth=0.9, zorder=3,
+        line(v, color=color, linestyle=REF_STYLES[key], linewidth=lw, zorder=3,
              label=(prefix + label) if c.get("reflegend", True) else None)
         if k and np.isfinite(e) and e > 0:
-            span(v - k * e, v + k * e, color=color, alpha=0.12, linewidth=0, zorder=0.5)
+            span(v - k * e, v + k * e, color=color, alpha=band_alpha, linewidth=0, zorder=0.5)
         msgs.append(prefix + label)
 
 

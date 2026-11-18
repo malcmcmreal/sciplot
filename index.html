@@ -235,6 +235,21 @@
           <select id="refaxis" data-cfg><option value="y">Y values (horizontal line)</option><option value="x">X values (vertical line)</option><option value="both">Both</option></select></div>
         <div class="row"><label for="refband">Shade</label>
           <select id="refband" data-cfg><option value="0">No band</option><option value="1">± 1σ</option><option value="2">± 2σ</option></select></div>
+        <div class="row"><label for="refcolor">Line colour</label>
+          <select id="refcolor" data-cfg>
+            <option value="">Same as the series</option>
+            <option value="black">Black</option>
+            <option value="0.45">Grey</option>
+            <option value="#BE5103">Orange</option>
+            <option value="#D55E00">Vermilion</option>
+            <option value="#c8372d">Red</option>
+            <option value="#0072B2">Blue</option>
+            <option value="#009E73">Green</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <input type="color" id="refcustom" data-cfg value="#000000" hidden title="Pick the line colour"></div>
+        <div class="row"><label for="refwidth">Line width</label><input type="number" id="refwidth" data-cfg value="0.9" min="0.2" step="0.1"></div>
+        <div class="row"><label for="refalpha">Band opacity</label><input type="number" id="refalpha" data-cfg value="0.12" min="0.02" max="1" step="0.02"></div>
         <label class="check"><input type="checkbox" id="reflegend" data-cfg checked> Show values in legend</label>
         <div class="row"><label for="hlines">Lines at y =</label><input type="text" id="hlines" data-cfg placeholder="e.g. 10, 25"></div>
         <div class="row" id="vlinesRow"><label for="vlines">Lines at x =</label><input type="text" id="vlines" data-cfg placeholder="e.g. 0"></div>
@@ -491,6 +506,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=12"></script>
+  <script type="module" src="app.js?v=13"></script>
 </body>
 </html>

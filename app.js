@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 10;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 11;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -469,6 +469,7 @@ function updateVisibility() {
   const polar = k === 'polar';
   const mappable = k === 'scatter' || k === 'linemarkers' || polar;
   $('polarRows').hidden = !polar;
+  $('refcustom').hidden = $('refcolor').value !== 'custom';
   const xyk = ['scatter', 'linemarkers', 'line', 'step', 'polar'].includes(k);
   $('groupRows').hidden = !xyk;
   $('groupOpts').hidden = !$('groupstats').checked;
