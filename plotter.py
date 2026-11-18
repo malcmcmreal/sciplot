@@ -914,13 +914,14 @@ def _polar_finish(ax, c, df, series, xl, yl):
         v = (p - o) / (np.hypot(*(p - o)) or 1)
         fs = plt.rcParams["axes.labelsize"]
         fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9)
-        dist = fs * 3.4
+        fs = _num(c.get("xlabelsize")) or fs
+        dist = fs * 3.4 + (_num(c.get("xlabelpad")) or 0)
         rot = np.degrees(np.arctan2(v[0], -v[1])) if abs(v[1]) > 1e-6 or abs(v[0]) > 1e-6 else 0
         rot = rot - 180 if rot > 90 else rot + 180 if rot < -90 else rot
         tr = matplotlib.transforms.offset_copy(ax.transData, fig=ax.figure, x=v[0] * dist,
                                                y=v[1] * dist, units="points")
-        ax.text(mid, r1, xl, rotation=rot, ha="center", va="center", rotation_mode="anchor",
-                transform=tr, fontsize=fs)
+        ax._sp_xltext = ax.text(mid, r1, xl, rotation=rot, ha="center", va="center",
+                                rotation_mode="anchor", transform=tr, fontsize=fs)
     ax.tick_params(axis="x", pad=2)
 
 
@@ -1573,6 +1574,42 @@ def _panel_series(c, df, msgs):
     return series
 
 
+def _text_style(ax, c):
+    """Per-panel size, position and spacing of the title, axis titles and tick labels."""
+    def num(k, lo=None):
+        v = _num(c.get(k))
+        return None if v is None or (lo is not None and v < lo) else v
+    if c.get("title"):
+        kw = {"loc": c.get("titleloc") or "center"}
+        if num("titlesize", 1):
+            kw["fontsize"] = num("titlesize")
+        if num("titlepad") is not None:
+            kw["pad"] = num("titlepad")
+        if c.get("titlebold"):
+            kw["fontweight"] = "bold"
+        ax.set_title("")
+        ax.set_title(c["title"], **kw)
+    polar = ax.name == "polar"
+    if not polar:
+        if num("xlabelsize", 1):
+            ax.xaxis.label.set_fontsize(num("xlabelsize"))
+        if num("xlabelpad") is not None:
+            ax.xaxis.labelpad = num("xlabelpad")
+        if c.get("xlabelloc") in ("left", "right"):
+            ax.set_xlabel(ax.get_xlabel(), loc=c["xlabelloc"])
+    if num("ylabelsize", 1):
+        ax.yaxis.label.set_fontsize(num("ylabelsize"))
+    if num("ylabelpad") is not None:
+        ax.yaxis.labelpad = num("ylabelpad")
+    if not polar:
+        if c.get("ylabelloc") in ("bottom", "top"):
+            ax.set_ylabel(ax.get_ylabel(), loc=c["ylabelloc"])
+        if c.get("ylabelside") == "right":
+            ax.yaxis.set_label_position("right")
+    if num("ticksize", 1):
+        ax.tick_params(axis="both", which="both", labelsize=num("ticksize"))
+
+
 def _hide_axes(ax, c):
     """Per-panel axis hiding (useful in multi-panel figures)."""
     if c.get("hideaxes"):
@@ -1597,6 +1634,7 @@ def draw_panel(fig, ax, c, df, groups):
     if not series:
         ax.text(0.5, 0.5, "Choose a Y column to plot", ha="center", va="center",
                 transform=ax.transAxes, color="0.5")
+        _text_style(ax, c)
         _hide_axes(ax, c)
         return msgs, points
 
@@ -1624,6 +1662,7 @@ def draw_panel(fig, ax, c, df, groups):
         if c.get("panel") and not c.get("_multi"):
             ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
                     fontweight="bold", fontsize=c.get("fontsize", 9) + 2)
+        _text_style(ax, c)
         _hide_axes(ax, c)
         return msgs, points
 
@@ -1695,6 +1734,7 @@ def draw_panel(fig, ax, c, df, groups):
     if c.get("panel") and not c.get("_multi"):
         ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
                 fontweight="bold", fontsize=c.get("fontsize", 9) + 2)
+    _text_style(ax, c)
     _hide_axes(ax, c)
     return msgs, points
 

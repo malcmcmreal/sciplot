@@ -42,6 +42,10 @@ Live: https://malcmcmreal.github.io/sciplot/
 
 The sidebar has three tool sets: **Data & files** (load data, export, saved plots and projects), **Plot & stats** (plot type, series, colour/size/shape, mean and reference lines, fits, group summaries) and **Layout & style** (figure layout for multi-panel figures, axes, fonts and colours). It opens on Plot & stats once data is loaded and remembers the last one you used.
 
+## Titles and axis titles
+
+Under **Layout & style → Axes → Title & axis-title size and position**, each panel can set its own sizes for the title, X title, Y title and tick labels. The title can sit left, centre or right and be bold, the X title left, centre or right, and the Y title bottom, middle or top, on the left or right side. Each has a gap (in pt) that moves it closer to or further from the plot.
+
 ## Multi-panel figures
 
 Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel starts empty (no columns chosen) but keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -359,6 +359,17 @@
         <div class="row"><label for="title">Title</label><input type="text" id="title" data-cfg></div>
         <div class="row"><label for="xlabel">X label</label><input type="text" id="xlabel" data-cfg placeholder="column name"></div>
         <div class="row"><label for="ylabel">Y label</label><input type="text" id="ylabel" data-cfg placeholder="column name"></div>
+        <details class="sub" id="titleOpts">
+          <summary>Title &amp; axis-title size and position</summary>
+          <p class="hint">Sizes in pt; blank uses the font size from Style. Gap = space to the plot in pt.</p>
+          <div class="row"><label>Title</label><input type="number" id="titlesize" data-cfg min="4" max="40" step="0.5" placeholder="size"><select id="titleloc" data-cfg><option value="center">centre</option><option value="left">left</option><option value="right">right</option></select></div>
+          <div class="row"><label>Title gap · bold</label><input type="number" id="titlepad" data-cfg min="-30" max="60" step="1" placeholder="gap"><label class="check inline"><input type="checkbox" id="titlebold" data-cfg> bold</label></div>
+          <div class="row"><label>X title</label><input type="number" id="xlabelsize" data-cfg min="4" max="40" step="0.5" placeholder="size"><select id="xlabelloc" data-cfg><option value="center">centre</option><option value="left">left</option><option value="right">right</option></select></div>
+          <div class="row"><label>X title gap</label><input type="number" id="xlabelpad" data-cfg min="-30" max="60" step="1" placeholder="gap"></div>
+          <div class="row"><label>Y title</label><input type="number" id="ylabelsize" data-cfg min="4" max="40" step="0.5" placeholder="size"><select id="ylabelloc" data-cfg><option value="center">middle</option><option value="bottom">bottom</option><option value="top">top</option></select></div>
+          <div class="row"><label>Y title gap · side</label><input type="number" id="ylabelpad" data-cfg min="-30" max="60" step="1" placeholder="gap"><select id="ylabelside" data-cfg><option value="left">left</option><option value="right">right</option></select></div>
+          <div class="row"><label for="ticksize">Tick labels</label><input type="number" id="ticksize" data-cfg min="4" max="40" step="0.5" placeholder="size"></div>
+        </details>
         <p class="hint">Maths works: <code>$\delta^{18}$O (‰)</code>, <code>$^{4}$He</code>, <code>$T$ (°C)</code></p>
         <div class="row"><label>X range</label><div class="pair"><input type="text" id="xmin" data-cfg placeholder="min"><input type="text" id="xmax" data-cfg placeholder="max"></div></div>
         <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ymin" data-cfg placeholder="min"><input type="text" id="ymax" data-cfg placeholder="max"></div></div>
@@ -605,6 +616,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=30"></script>
+  <script type="module" src="app.js?v=31"></script>
 </body>
 </html>

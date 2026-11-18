@@ -265,3 +265,4 @@ details.sec > summary + h3.subhead, details.sec > h3.subhead:first-of-type { bor
 .ttpane > details.sec:first-child { border-top: none; padding-top: 0; }
 #sec-export .row-inline { flex-wrap: wrap; }
 #sec-export .row-inline .spacer { flex-basis: 100%; height: 0; }
+.row label.check.inline { width: auto; flex: 0 0 auto; margin: 0; display: inline-flex; align-items: center; gap: 0.3rem; }
