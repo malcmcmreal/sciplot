@@ -588,27 +588,65 @@ class Mapping:
             sm = matplotlib.cm.ScalarMappable(norm=self.hue["norm"], cmap=self.hue["cmap"])
             cb = _colorbar(fig, ax, sm, self.c, extend=self._extend())
             cb.set_label(self.c.get("huelabel") or self.hue["col"])
-            if isinstance(self.hue["norm"], matplotlib.colors.LogNorm):
-                cb.ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(subs=(1, 2, 5)))
-                cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-                cb.ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+            if isinstance(self.hue["norm"], matplotlib.colors.LogNorm) and self.c.get("cbarticks") != "none":
+                la = cb.ax.xaxis if cb.orientation == "horizontal" else cb.ax.yaxis
+                if not _num(self.c.get("cbarnticks")):
+                    la.set_major_locator(matplotlib.ticker.LogLocator(subs=(1, 2, 5)))
+                la.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+                la.set_minor_formatter(matplotlib.ticker.NullFormatter())
             cb.outline.set_linewidth(0.6)
             return cb
         return None
 
 
 def _colorbar(fig, ax, sm, c, extend="neither"):
-    """A colour bar beside one panel. With a length / thickness set (Colour section) it is
-    sized relative to the panel's own plot area, so it follows a panel with a fixed aspect."""
+    """A colour bar beside one panel. Position, length, thickness and ticks come from the
+    Colour section; with a length / thickness set it is sized relative to the panel's own
+    plot area, so it follows a panel with a fixed aspect."""
     ln, th = _num(c.get("cbarlen")), _num(c.get("cbarwid"))
+    pos = c.get("cbarpos") or "right"
     polar = ax.name == "polar"
+    horiz = pos in ("top", "bottom")
     if ln or th:
         ln = min(max((ln or (70 if polar else 100)) / 100, 0.05), 1.0)
         th = min(max((th or 4) / 100, 0.005), 0.5)
-        cax = ax.inset_axes([1.0 + (0.14 if polar else 0.03), (1 - ln) / 2, th, ln])
-        return fig.colorbar(sm, cax=cax, extend=extend)
-    return fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25,
-                        shrink=0.7 if polar else 1.0, extend=extend)
+        g = 0.14 if polar else 0.03
+        box = {"right": [1.0 + g, (1 - ln) / 2, th, ln],
+               "left": [-0.24 - th, (1 - ln) / 2, th, ln],           # clear of the Y tick labels/title
+               "top": [(1 - ln) / 2, 1.0 + g, ln, th],
+               "bottom": [(1 - ln) / 2, -0.30 - th, ln, th]}[pos]   # clear of the X tick labels/title
+        cax = ax.inset_axes(box)
+        cb = fig.colorbar(sm, cax=cax, extend=extend, orientation="horizontal" if horiz else "vertical")
+        if pos == "top":
+            cax.xaxis.set_ticks_position("top")
+            cax.xaxis.set_label_position("top")
+        elif pos == "left":
+            cax.yaxis.set_ticks_position("left")
+            cax.yaxis.set_label_position("left")
+    else:
+        cb = fig.colorbar(sm, ax=ax, location=pos, pad=0.02 if not horiz else 0.04,
+                          fraction=0.05, aspect=25, shrink=0.7 if polar else 1.0, extend=extend)
+    _style_cbar(cb, c)
+    return cb
+
+
+def _style_cbar(cb, c):
+    """Colour bar ticks: shown / labels only / hidden, how many, and which way they point."""
+    n = _num(c.get("cbarnticks"))
+    if n and n >= 2:
+        cb.locator = matplotlib.ticker.MaxNLocator(int(n), min_n_ticks=2)
+    mode = c.get("cbarticks") or "shown"
+    long_ax = cb.ax.xaxis if cb.orientation == "horizontal" else cb.ax.yaxis
+    if mode == "none":
+        long_ax.set_major_locator(matplotlib.ticker.NullLocator())
+        long_ax.set_minor_locator(matplotlib.ticker.NullLocator())
+    elif mode == "labels":
+        cb.ax.tick_params(which="both", length=0)
+    if c.get("cbartickdir") in ("in", "out", "inout"):
+        cb.ax.tick_params(which="both", direction=c["cbartickdir"])
+    if c.get("cbarminor"):
+        cb.minorticks_on()
+    cb._sp_styled = True
 
 
 # ---------------------------------------------------------- reference lines
@@ -1874,8 +1912,10 @@ def _shared_key(fig, axes, mode, base):
                               fraction=0.04, aspect=max(5, 140 / th) if th else 35,
                               shrink=min(1.0, ln / 100) if ln else 0.8, extend=m._extend())
         cb.set_label(lab)
+        if not getattr(cb, "_sp_styled", False):
+            _style_cbar(cb, base)
         if isinstance(m.hue["norm"], matplotlib.colors.LogNorm):
-            cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+            (cb.ax.xaxis if cb.orientation == "horizontal" else cb.ax.yaxis).set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
         cb.outline.set_linewidth(0.6)
     if not H:
         return
