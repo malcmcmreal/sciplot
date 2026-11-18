@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 6;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 7;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -45,7 +45,7 @@ async function boot() {
     py.FS.writeFile('/home/pyodide/app/plotter.py', PYSRC);
     py.runPython("import sys; sys.path.insert(0, '/home/pyodide/app'); import plotter");
     status('Ready', 'ok');
-    if (curFile) loadData();
+    if (curFile?.bytes) loadData();
   } catch (e) {
     status('Python failed to load', 'fail');
     showError(e);
@@ -58,7 +58,16 @@ function pyCall(expr, args) {
 }
 
 // ---------------------------------------------------------------- data loading
+let keepSetup = false;      // true after opening a setup that is waiting for its data file
 async function setFile(name, bytes) {
+  if (keepSetup) {
+    keepSetup = false;
+    curFile = { name, bytes, sheet: curFile?.sheet ?? null };
+    $('fname').textContent = name;
+    hideBanner();
+    if (py && PYSRC) loadData(); else status('Starting Python… (your file will load when ready)');
+    return;
+  }
   if (info) {
     // new dataset: keep the style, drop labels and ranges that belonged to the old one
     ['title', 'xlabel', 'ylabel', 'xmin', 'xmax', 'ymin', 'ymax'].forEach((id) => { $(id).value = ''; });
@@ -71,6 +80,7 @@ async function setFile(name, bytes) {
 }
 
 async function loadData(sheet = null) {
+  if (!curFile?.bytes) return;
   $('err').textContent = '';
   try {
     if (/\.xls$/i.test(curFile.name)) await py.pyimport('micropip').install('xlrd');
@@ -93,7 +103,7 @@ async function loadData(sheet = null) {
 
 $('file').addEventListener('change', async (e) => {
   const f = e.target.files[0];
-  if (f) setFile(f.name, new Uint8Array(await f.arrayBuffer()));
+  if (f) openAny(f.name, new Uint8Array(await f.arrayBuffer()));
   e.target.value = '';
 });
 const drop = $('drop');
@@ -104,8 +114,12 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', async (e) => {
   e.preventDefault(); drop.classList.remove('over');
   const f = e.dataTransfer.files[0];
-  if (f) setFile(f.name, new Uint8Array(await f.arrayBuffer()));
+  if (f) openAny(f.name, new Uint8Array(await f.arrayBuffer()));
 });
+async function openAny(name, bytes) {
+  if (/\.(sciplot|png|svg|pdf|json)$/i.test(name)) openProjectBytes(name, bytes);
+  else setFile(name, bytes);
+}
 $('example').addEventListener('change', async (e) => {
   const url = e.target.value;
   if (!url) return;
@@ -421,8 +435,8 @@ function scheduleRender(delay = 200) {
   renderTimer = setTimeout(renderPreview, delay);
 }
 
-function pyRender(cfg, fmt, dpi) {
-  return pyCall(`plotter.render(_args[0], "${fmt}", ${dpi})`, [JSON.stringify(cfg)]);
+function pyRender(cfg, fmt, dpi, meta = '') {
+  return pyCall(`plotter.render(_args[0], "${fmt}", ${dpi}, _args[1])`, [JSON.stringify(cfg), meta]);
 }
 
 function renderPreview() {
@@ -455,6 +469,10 @@ function renderPreview() {
     $('clearExcl').textContent = `Clear exclusions (${excluded.size})`;
     markTableRows();
     try { localStorage.setItem(LS_KEY, JSON.stringify(getConfig({ withExcluded: false }))); } catch {}
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(autoSave, 1200);
+    $('saveBrowser').disabled = false;
+    $('saveProject').disabled = false;
   } catch (e) { showError(e); }
 }
 
@@ -462,7 +480,8 @@ function renderPreview() {
 document.querySelectorAll('[data-exp]').forEach((b) => b.addEventListener('click', () => {
   const fmt = b.dataset.exp;
   try {
-    const r = pyRender(getConfig(), fmt, +$('dpi').value);
+    const meta = 'SciPlot1:' + b64utf8(JSON.stringify(buildProject({ withData: $('embedData').checked, base64: true }))) + '!';
+    const r = pyRender(getConfig(), fmt, +$('dpi').value, meta);
     const bin = Uint8Array.from(atob(r.data), (ch) => ch.charCodeAt(0));
     const mime = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' }[fmt];
     download(`${baseName()}.${fmt}`, new Blob([bin], { type: mime }));
@@ -686,18 +705,196 @@ document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('clic
   $('stage').classList.toggle('exclude', tool === 'exclude');
 }));
 
+// ---------------------------------------------------------------- saving plots
+// A "project" is everything needed to rebuild a plot: the settings (incl. excluded rows and
+// calculated columns) and, optionally, the data file itself.
+function bytesToB64(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function b64ToBytes(b) { return Uint8Array.from(atob(b), (ch) => ch.charCodeAt(0)); }
+function b64utf8(str) { return bytesToB64(new TextEncoder().encode(str)); }
+
+function buildProject({ withData = true, base64 = false } = {}) {
+  const p = { sciplot: 1, saved: new Date().toISOString(), cfg: getConfig() };
+  if (curFile) {
+    p.file = { name: curFile.name, sheet: curFile.sheet ?? null };
+    if (withData) p.file[base64 ? 'b64' : 'bytes'] = base64 ? bytesToB64(curFile.bytes) : curFile.bytes;
+  }
+  return p;
+}
+
+function restoreProject(p, how = 'Opened') {
+  if (!p || !p.cfg) throw new Error('Not a SciPlot project');
+  info = null;                                   // columns come from the project's data
+  applyConfig(p.cfg);
+  excluded = new Set(p.cfg.excluded || []);
+  $('headerRows').hidden = $('header').value !== 'row';
+  updateVisibility();
+  const bytes = p.file?.bytes ? new Uint8Array(p.file.bytes) : p.file?.b64 ? b64ToBytes(p.file.b64) : null;
+  if (p.file && bytes) {
+    curFile = { name: p.file.name, bytes, sheet: p.cfg.sheet ?? p.file.sheet ?? null };
+    $('fname').textContent = p.file.name;
+    keepSetup = false;
+    if (py && PYSRC) loadData(); else status('Starting Python… (your plot will open when ready)');
+    showBanner(`${how} “${p.name || p.file.name}” (saved ${new Date(p.saved).toLocaleString()}).`);
+  } else if (p.file) {
+    curFile = { name: p.file.name, bytes: null, sheet: p.cfg.sheet ?? p.file.sheet ?? null };
+    keepSetup = true;
+    $('fname').textContent = '';
+    showBanner(`Setup loaded. Now load the data file “${p.file.name}” and the plot will be rebuilt.`);
+  }
+}
+
+async function openProjectBytes(name, bytes) {
+  try {
+    let p;
+    if (/\.(sciplot|json)$/i.test(name)) {
+      p = JSON.parse(new TextDecoder().decode(bytes));
+      if (!p.sciplot && p.kind) {             // a style/settings file
+        applyConfig(p); scheduleRender(0); showBanner('Style applied.'); return;
+      }
+    } else {
+      const txt = new TextDecoder('latin1').decode(bytes);
+      const m = txt.match(/SciPlot1:([A-Za-z0-9+\/=]+)!/);
+      if (!m) throw new Error(`No SciPlot setup found in ${name}. Only figures exported from SciPlot can be reopened.`);
+      p = JSON.parse(new TextDecoder().decode(b64ToBytes(m[1])));
+    }
+    restoreProject(p);
+  } catch (e) { showError(e); }
+}
+
+$('saveProject').addEventListener('click', () => {
+  const nm = ($('saveName').value.trim() || (curFile ? curFile.name.replace(/\.[^.]+$/, '') : 'plot'));
+  const p = buildProject({ withData: true, base64: true });
+  p.name = nm;
+  download(nm.replace(/[^\w\- ]+/g, '_') + '.sciplot', new Blob([JSON.stringify(p)], { type: 'application/json' }));
+});
+$('openProject').addEventListener('click', () => $('projectFile').click());
+$('projectFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (f) openProjectBytes(f.name, new Uint8Array(await f.arrayBuffer()));
+  e.target.value = '';
+});
+
+// ---- browser library (IndexedDB), including an automatic copy of the current plot
+const DB = {
+  open() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('sciplot', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('plots', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async tx(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('plots', mode);
+      const out = fn(t.objectStore('plots'));
+      t.oncomplete = () => res(out?.result);
+      t.onerror = () => rej(t.error);
+    });
+  },
+  put(o) { return this.tx('readwrite', (s) => s.put(o)); },
+  get(id) { return this.tx('readonly', (s) => s.get(id)); },
+  all() { return this.tx('readonly', (s) => s.getAll()); },
+  del(id) { return this.tx('readwrite', (s) => s.delete(id)); },
+};
+
+function thumbnail() {
+  const img = $('fig');
+  if (!img.naturalWidth) return '';
+  const cv = document.createElement('canvas');
+  cv.width = 168; cv.height = 126;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 168, 126);
+  const s = Math.min(168 / img.naturalWidth, 126 / img.naturalHeight);
+  const w = img.naturalWidth * s, h = img.naturalHeight * s;
+  g.drawImage(img, (168 - w) / 2, (126 - h) / 2, w, h);
+  return cv.toDataURL('image/png');
+}
+
+let autoTimer = null;
+async function autoSave() {
+  if (!curFile?.bytes || !info) return;
+  try { await DB.put({ id: '__last__', name: curFile.name, saved: Date.now(), thumb: '', project: buildProject() }); } catch {}
+}
+
+async function refreshSaved() {
+  let items = [];
+  try { items = (await DB.all()).filter((o) => o.id !== '__last__').sort((a, b) => b.saved - a.saved); } catch {}
+  $('savedEmpty').hidden = items.length > 0;
+  $('savedList').innerHTML = items.map((o) => `
+    <div class="saved-item" data-id="${esc(o.id)}" title="Open this plot">
+      ${o.thumb ? `<img src="${o.thumb}" alt="">` : '<span></span>'}
+      <div><div class="nm">${esc(o.name)}</div>
+        <div class="sub">${esc(o.project?.file?.name || '')} · ${new Date(o.saved).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</div></div>
+      <button type="button" class="del" title="Delete">✕</button>
+    </div>`).join('');
+}
+$('savedList').addEventListener('click', async (e) => {
+  const item = e.target.closest('.saved-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  if (e.target.closest('.del')) {
+    const b = e.target.closest('.del');
+    if (b.dataset.confirm) { await DB.del(id); refreshSaved(); }
+    else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; setTimeout(() => { b.textContent = '✕'; delete b.dataset.confirm; }, 3000); }
+    return;
+  }
+  const o = await DB.get(id);
+  if (o) { $('saveName').value = o.name; restoreProject({ ...o.project, name: o.name }); }
+});
+$('saveBrowser').addEventListener('click', async () => {
+  if (!curFile?.bytes) return;
+  const name = $('saveName').value.trim() || `${curFile.name} · ${new Date().toLocaleDateString()}`;
+  try {
+    const existing = (await DB.all()).find((o) => o.name === name && o.id !== '__last__');
+    await DB.put({ id: existing?.id || 'p' + Date.now(), name, saved: Date.now(), thumb: thumbnail(), project: buildProject() });
+    $('saveName').value = name;
+    flash($('saveBrowser'), existing ? 'Updated' : 'Saved');
+    refreshSaved();
+  } catch (e) { showError('Could not save in this browser: ' + e); }
+});
+
+function showBanner(text) { $('bannerText').textContent = text; $('banner').hidden = false; }
+function hideBanner() { $('banner').hidden = true; }
+$('bannerClose').addEventListener('click', hideBanner);
+async function startFresh() {
+  try { await DB.del('__last__'); } catch {}
+  try { localStorage.removeItem(LS_KEY); } catch {}
+  curFile = null; info = null; last = null; excluded.clear(); keepSetup = false;
+  applyConfig({ ...DEFAULTS, series: [], calc: [] });
+  $('fname').textContent = ''; $('saveName').value = '';
+  $('stage').classList.remove('show'); $('placeholder').hidden = false;
+  $('dataPanel').hidden = true; $('msgs').textContent = ''; $('err').textContent = '';
+  document.querySelectorAll('[data-exp], #dlScript, #saveBrowser, #saveProject').forEach((b) => { b.disabled = true; });
+  hideBanner();
+}
+$('bannerFresh').addEventListener('click', startFresh);
+$('newPlot').addEventListener('click', startFresh);
+
 // ---------------------------------------------------------------- start-up
 DEFAULTS = getConfig({ withExcluded: false });
 delete DEFAULTS.series;
 delete DEFAULTS.x;
-(() => {
-  // settings from a shared link take priority over the last-used settings
+(async () => {
+  // a shared settings link wins; otherwise reopen the last plot (with its data); otherwise last settings
   const m = location.hash.match(/s=([\w-]+)/);
   let saved = null;
   if (m) { try { saved = decodeCfg(m[1]); } catch {} }
-  if (!saved) { try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch {} }
-  if (saved) applyConfig(saved);
+  let lastSession = null;
+  if (!saved) { try { lastSession = await DB.get('__last__'); } catch {} }
+  if (lastSession?.project?.file?.bytes) {
+    restoreProject(lastSession.project, 'Reopened your last plot,');
+  } else {
+    if (!saved) { try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch {} }
+    if (saved) applyConfig(saved);
+  }
   $('headerRows').hidden = $('header').value !== 'row';
   updateVisibility();
+  refreshSaved();
 })();
 boot();

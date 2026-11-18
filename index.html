@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -20,14 +20,30 @@
 
   <main class="layout">
     <aside class="controls">
+      <details class="sec" id="savedSection" open>
+        <summary>Saved plots</summary>
+        <div class="save-row">
+          <input type="text" id="saveName" placeholder="Name this plot">
+          <button type="button" id="saveBrowser" class="small" disabled>Save</button>
+        </div>
+        <div id="savedList" class="saved-list"></div>
+        <p class="hint" id="savedEmpty">Plots you save here (settings and data) stay in this browser. Your current plot is also kept automatically, so it reopens next time.</p>
+        <div class="actions">
+          <button type="button" id="newPlot" class="ghost small" title="Clear the current plot and data">New plot</button>
+          <button type="button" id="saveProject" class="ghost small" disabled title="One file with the settings and the data">Download project file</button>
+          <button type="button" id="openProject" class="ghost small" title="Open a .sciplot project, or a PNG/SVG/PDF exported from SciPlot">Open project or figure</button>
+          <input type="file" id="projectFile" accept=".sciplot,.json,.png,.svg,.pdf" hidden>
+        </div>
+      </details>
+
       <details class="sec" open>
         <summary>Data</summary>
         <div id="drop" class="drop" tabindex="0" role="button">
           <strong>Drop a file here</strong> or click to choose<br>
-          <span class="hint">.csv .txt .dat .tsv .xlsx .xls</span>
+          <span class="hint">.csv .txt .dat .tsv .xlsx .xls · or a .sciplot project / exported figure</span>
           <div id="fname" class="fname"></div>
         </div>
-        <input type="file" id="file" accept=".csv,.txt,.dat,.tsv,.xlsx,.xlsm,.xls" hidden>
+        <input type="file" id="file" accept=".csv,.txt,.dat,.tsv,.xlsx,.xlsm,.xls,.sciplot,.png,.svg,.pdf" hidden>
         <div class="row">
           <label for="example">Or try</label>
           <select id="example">
@@ -305,14 +321,15 @@
 
       <section class="actions">
         <button type="button" id="copyLink" class="ghost small">Copy link to these settings</button>
-        <button type="button" id="saveCfg" class="ghost small">Save settings</button>
-        <button type="button" id="loadCfg" class="ghost small">Load settings</button>
+        <button type="button" id="saveCfg" class="ghost small" title="Settings only, no data: reuse a style on other datasets">Save style</button>
+        <button type="button" id="loadCfg" class="ghost small">Apply style</button>
         <input type="file" id="cfgFile" accept=".json" hidden>
-        <button type="button" id="reset" class="ghost small">Reset</button>
+        <button type="button" id="reset" class="ghost small">Reset settings</button>
       </section>
     </aside>
 
     <section class="views">
+      <div class="banner" id="banner" hidden><span id="bannerText"></span><button type="button" id="bannerFresh" class="ghost small">Start fresh</button><button type="button" id="bannerClose" class="ghost small" title="Dismiss">✕</button></div>
       <div class="figpanel">
         <div class="figtools">
           <div class="seg" role="group" aria-label="Plot tool">
@@ -344,6 +361,8 @@
           <button type="button" id="dlScript" class="ghost" disabled title="plotter.py plus a settings file that rebuilds this figure in Python">Download Python + settings</button>
         </div>
         <p class="hint">PDF embeds TrueType fonts; SVG keeps text editable in Illustrator or Inkscape. The figure is exactly the size chosen in Style.</p>
+        <p class="hint">Exported figures remember their setup: drop one back onto SciPlot to keep editing it.</p>
+        <label class="check"><input type="checkbox" id="embedData"> Also store the data inside exported figures (bigger files; don't use for figures you send to journals if the data are private)</label>
       </div>
 
       <div id="msgs" class="msgs"></div>
@@ -366,6 +385,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

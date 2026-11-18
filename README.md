@@ -27,7 +27,13 @@ Live: https://malcmcmreal.github.io/sciplot/
   - Use the **Exclude points** tool to click points, or click row numbers in the table, to drop outliers from the plot and the fit. Excluded points can be shown as grey ×.
 - **Publication style:** journal figure sizes (89 / 140 / 183 mm), inward ticks on all four sides, minor ticks, and fonts in sans, STIX serif (Times-like) or Computer Modern (LaTeX). Colour palettes include Okabe–Ito and all the main seaborn palettes (colorblind, deep, muted, pastel, Set2, rocket, mako, flare, crest, vlag and more). Themes: a boxed publication style or seaborn's ticks / white / whitegrid / darkgrid, with optional despine. Markers can be open or filled with a different shape per series, and you can add panel labels such as "(a)". Axis labels support maths text (`$\delta^{18}$O`).
 - **Export:** PDF (TrueType fonts embedded), SVG (text stays editable) and PNG at 300/600/1200 dpi. Exported figures are exactly the chosen size.
-- **Settings:** your last settings are remembered. **Copy link** puts the settings in the URL so you can bookmark or share a style, and settings can be saved and loaded as JSON (useful as a house style for a paper).
+- **Saving plots:**
+  - The current plot (settings *and* data) is kept in the browser automatically and reopens next time you visit; **New plot** clears it.
+  - **Saved plots** keeps any number of named plots in the browser, with thumbnails. Click one to reopen it.
+  - **Download project file** saves a `.sciplot` file (settings + data) you can keep with the paper, move to another computer or send to a colleague; open it with **Open project or figure** or drop it on the page.
+  - Every exported PNG/SVG/PDF carries its setup in its metadata, so dropping the figure back onto SciPlot reopens it for editing. Without data, SciPlot asks for the data file and rebuilds the plot; tick *Also store the data inside exported figures* to make the figure fully self-contained (avoid for figures sent to journals if the data are private).
+  - **Save style / Apply style** keep settings only, for reusing a look on other data; **Copy link** puts the settings in the URL.
+  - Everything stays on your computer – nothing is uploaded.
 
 ## Reproducing a figure offline
 

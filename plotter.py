@@ -1260,14 +1260,20 @@ def _geometry(fig, ax, points=None):
             "xlog": ax.get_xscale() == "log", "ylog": ax.get_yscale() == "log"}
 
 
-def render(cfg_json, fmt="png", dpi=200):
-    """Render the figure; returns JSON {data (base64), msgs, geom, points, colors, swatches}."""
+META_KEY = {"png": "SciPlot", "svg": "Description", "pdf": "Subject"}
+
+
+def render(cfg_json, fmt="png", dpi=200, meta=""):
+    """Render the figure; returns JSON {data (base64), msgs, geom, points, colors, swatches}.
+    `meta` (the plot setup, "SciPlot1:<base64>!") is embedded in the file's metadata so an
+    exported figure can be dropped back onto the site to reopen it."""
     c = json.loads(cfg_json)
     fig, msgs, points = make_figure(c)
     buf = io.BytesIO()
     with plt.rc_context(_style(c)):
         geom = _geometry(fig, fig.axes[0], points) if fmt == "png" else None
-        fig.savefig(buf, format=fmt, dpi=dpi)
+        md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
     for pp in points:
         pp.pop("phi", None)
     plt.close(fig)

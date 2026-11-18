@@ -182,3 +182,19 @@ table.raw tr.above td { color: #6e6e73; }
 .calc-row input { min-width: 0; font-family: var(--mono); font-size: 0.78rem; }
 .calc-row button { border: none; background: none; color: var(--muted); padding: 0 0.3rem; }
 .calc-row button:hover { color: var(--fail); filter: none; }
+
+/* saved plots */
+.save-row { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; }
+.save-row input { flex: 1; min-width: 0; }
+.saved-list { display: grid; gap: 0.35rem; margin: 0.4rem 0; max-height: 300px; overflow-y: auto; }
+.saved-item { display: grid; grid-template-columns: 56px 1fr auto; gap: 0.5rem; align-items: center; padding: 0.35rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--raised); cursor: pointer; }
+.saved-item:hover { border-color: var(--link); }
+.saved-item img { width: 56px; height: 42px; object-fit: contain; background: #fff; border-radius: 4px; }
+.saved-item .nm { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-item .sub { font-size: 0.72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-item .del { border: none; background: none; color: var(--muted); padding: 0.2rem 0.35rem; font-size: 0.85rem; }
+.saved-item .del:hover { color: var(--fail); filter: none; }
+.banner { display: flex; gap: 0.6rem; align-items: center; background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--link); border-radius: var(--radius); padding: 0.5rem 0.8rem; font-size: 0.88rem; }
+.banner span { flex: 1; }
