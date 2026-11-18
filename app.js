@@ -104,7 +104,9 @@ async function loadData(sheet = null) {
     $('allsheetsRow').hidden = info.sheets.length < 2;
     $('sheetRow').hidden = !info.sheets.length || ($('allsheets').checked && info.sheets.length > 1);
     $('sheet').innerHTML = info.sheets.map((s) => `<option ${s === info.sheet ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    const firstLoad = !$('x').options.length;
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
+    if (firstLoad && toolTab() === 'file') setToolTab('plot');   // data in: on to plotting
     fillSS();
     if (currentView === 'ss') ssSchedule(0);
     showRaw();
@@ -1595,6 +1597,27 @@ document.querySelectorAll('[data-lay]').forEach((el) => {
     scheduleRender(200);
   });
 });
+
+// ---------------------------------------------------------------- tool tabs (sidebar)
+const TT_KEY = 'sciplot-tooltab';
+function toolTab() { return document.querySelector('.tooltabs button.on')?.dataset.tt || 'file'; }
+function setToolTab(t) {
+  document.querySelectorAll('.tooltabs button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.tt === t);
+    b.setAttribute('aria-selected', b.dataset.tt === t);
+  });
+  document.querySelectorAll('.ttpane').forEach((p) => { p.hidden = p.dataset.tt !== t; });
+  try { localStorage.setItem(TT_KEY, t); } catch (e) { /* storage unavailable */ }
+}
+document.querySelector('.tooltabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tt]');
+  if (b) setToolTab(b.dataset.tt);
+});
+{
+  let t = 'file';
+  try { t = localStorage.getItem(TT_KEY) || 'file'; } catch (e) { /* storage unavailable */ }
+  setToolTab(['file', 'plot', 'layout'].includes(t) ? t : 'file');
+}
 
 // ---------------------------------------------------------------- sections: remember open / closed
 const SEC_KEY = 'sciplot-sections';

@@ -38,11 +38,15 @@ Live: https://malcmcmreal.github.io/sciplot/
   - **Save style / Apply style** keep settings only, for reusing a look on other data; **Copy link** puts the settings in the URL.
   - Everything stays on your computer – nothing is uploaded.
 
+## Where things are
+
+The sidebar has three tool sets: **Data & files** (load data, export, saved plots and projects), **Plot & stats** (plot type, series, colour/size/shape, mean and reference lines, fits, group summaries) and **Layout & style** (figure layout for multi-panel figures, axes, fonts and colours). It opens on Plot & stats once data is loaded and remembers the last one you used.
+
 ## Multi-panel figures
 
 Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel starts empty (no columns chosen) but keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
 
-Each panel can plot a different sheet of the workbook: activate the panel, then pick its sheet. Header settings, combined sheets and calculated columns are shared by all panels, and excluded points are remembered per sheet. Overall controls are under **Figure layout**:
+Each panel can plot a different sheet of the workbook: activate the panel, then pick its sheet. Header settings, combined sheets and calculated columns are shared by all panels, and excluded points are remembered per sheet. Overall controls are under **Layout & style → Figure layout**:
 
 - columns
 - figure size: journal single, 1.5 or double column, or custom
