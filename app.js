@@ -406,6 +406,17 @@ const MARKER_OPTS = [['auto', 'auto'], ['o', '● circle'], ['s', '■ square'],
   ['h', '⬢ hexagon'], ['p', '⬟ pentagon'], ['*', '★ star'], ['+', '+ plus'], ['x', '× cross'], ['.', '· point']]
   .map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
 
+function seriesBadge(d) {
+  // one-line summary of what's set inside the collapsed "Error bars, fit & style"
+  const b = [];
+  if (d.querySelector('.s-yerr').value || d.querySelector('.s-xerr').value) b.push('error bars');
+  const fit = +d.querySelector('.s-fit').value;
+  if (fit) b.push(['', 'linear', 'quadratic', 'cubic'][fit] + ' fit');
+  if (d.querySelector('.s-color').dataset.set) b.push('colour');
+  if (d.querySelector('.s-marker').value !== 'auto') b.push('marker');
+  if (d.querySelector('.s-size').value || d.querySelector('.s-alpha').value) b.push('size/opacity');
+  d.querySelector('.s-badge').textContent = b.join(' · ');
+}
 function tableOptions(t, sel, blank) {
   return (blank ? `<option value="">${blank}</option>` : '') +
     t.columns.map((c) => `<option ${c === sel ? 'selected' : ''}>${esc(c)}</option>`).join('');
@@ -424,9 +435,10 @@ function addSeries(s = {}, replace = null) {
     ${srcRow}
     ${src ? `<div class="row s-xrow"><label>X</label><select class="s-x">${opts(s.x)}</select></div>` : ''}
     <div class="row"><label>Y</label><select class="s-y">${opts(s.y)}</select></div>
+    <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
+    <details class="s-more"${s.open ? ' open' : ''}><summary>Error bars, fit &amp; style <span class="s-badge"></span></summary>
     <div class="row s-err"><label>Y error</label><select class="s-yerr">${opts(s.yerr, 'none')}</select></div>
     <div class="row s-err"><label>X error</label><select class="s-xerr">${opts(s.xerr, 'none')}</select></div>
-    <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
     <div class="row s-fitrow"><label>Fit</label><select class="s-fit">
       <option value="0">None</option><option value="1">Linear</option><option value="2">Quadratic</option><option value="3">Cubic</option></select></div>
     <div class="row s-look"><label>Colour</label><div class="s-colorwrap">
@@ -441,7 +453,8 @@ function addSeries(s = {}, replace = null) {
     <div class="row3 s-look">
       <div class="row"><label>Size</label><input type="number" class="s-size" step="0.5" min="0.5" placeholder="auto" value="${esc(s.size ?? '')}"></div>
       <div class="row"><label>Opacity</label><input type="number" class="s-alpha" step="0.05" min="0.05" max="1" placeholder="auto" value="${esc(s.alpha ?? '')}"></div>
-    </div>`;
+    </div>
+    </details>`;
   const srcSel = d.querySelector('.s-source');
   if (srcSel) srcSel.addEventListener('change', (e) => {
     e.stopPropagation();
@@ -473,8 +486,10 @@ function addSeries(s = {}, replace = null) {
   d.querySelector('.rm').addEventListener('click', () => {
     if (document.querySelectorAll('.series').length > 1) { d.remove(); scheduleRender(); }
   });
-  d.addEventListener('input', () => scheduleRender());
+  d.addEventListener('input', () => { seriesBadge(d); scheduleRender(); });
+  d.addEventListener('change', () => seriesBadge(d));
   if (replace) replace.replaceWith(d); else $('seriesList').appendChild(d);
+  seriesBadge(d);
   updateVisibility();
 }
 $('addSeries').addEventListener('click', () => {
@@ -509,6 +524,40 @@ const DIST = new Set(['hist', 'kde', 'box', 'violin', 'strip', 'swarm']);
 const GROUPED = new Set(['box', 'violin', 'strip', 'swarm']);
 const CATEGORICAL = new Set(['bar', ...GROUPED]);
 
+const TYPE_TITLES = { polar: 'Polar options', hist: 'Histogram options', kde: 'Density (KDE) options',
+  violin: 'Violin options', box: 'Box plot options' };
+function updateBadges() {
+  const set = (id, t) => { const el = $('b-' + id); if (el) el.textContent = t; };
+  set('data', curFile?.name ? curFile.name + ($('allsheets').checked ? ' · all sheets' : '') : '');
+  const k = $('kind').value;
+  set('plot', `${$('kind').selectedOptions[0]?.textContent || ''} · ${document.querySelectorAll('.series').length} series`);
+  const m = [];
+  if ($('hue').value) m.push('colour: ' + $('hue').value);
+  if ($('sizeby').value) m.push('size: ' + $('sizeby').value);
+  if ($('styleby').value) m.push('shape: ' + $('styleby').value);
+  if ($('vector').checked) m.push('vectors');
+  if (k === 'hist' && $('histcolor').value) m.push('bins by ' + $('histcolor').value);
+  set('map', m.join(' · '));
+  const s = [];
+  const st = ['refmean', 'refmedian', 'refwmean'].filter((id) => $(id).checked).map((id) => ({ refmean: 'mean', refmedian: 'median', refwmean: 'wtd mean' })[id]);
+  if (st.length) s.push(st.join('/') + (document.querySelectorAll('.ref-row').length ? ` (+${document.querySelectorAll('.ref-row').length} col)` : ''));
+  if ($('hlines').value || $('vlines').value || $('oneone').checked) s.push('fixed lines');
+  if (getSeries().some((x) => x.fit)) s.push('fit' + (+$('ci').value ? ` ${$('ci').value}% band` : ''));
+  if ($('groupstats').checked) s.push('group ' + $('groupstat').value);
+  set('stats', s.join(' · '));
+  const a = [];
+  if ($('xlog').checked || $('ylog').checked) a.push('log ' + [$('xlog').checked && 'X', $('ylog').checked && 'Y'].filter(Boolean).join('+'));
+  if (['xmin', 'xmax', 'ymin', 'ymax'].some((id) => $(id).value !== '')) a.push('ranges set');
+  if ($('xinvert').checked || $('yinvert').checked) a.push('inverted');
+  if ($('title').value) a.push('title');
+  if ($('grid').value !== 'none') a.push('grid');
+  set('axes', a.join(' · '));
+  set('style', [$('size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, ''), $('palette').selectedOptions[0]?.textContent,
+    $('theme').value !== 'publication' ? $('theme').selectedOptions[0]?.textContent : ''].filter(Boolean).join(' · '));
+  const n = document.querySelectorAll('.saved-item').length;
+  set('saved', n ? `${n} saved` : '');
+}
+
 function updateVisibility() {
   const k = $('kind').value;
   const hist = k === 'hist', bar = k === 'bar', dist = DIST.has(k), grouped = GROUPED.has(k);
@@ -531,7 +580,7 @@ function updateVisibility() {
   $('histcolorHint').hidden = !hc;
   $('kdeRows').hidden = k !== 'kde';
   $('bwRow').hidden = !(k === 'kde' || (hist && $('histkde').checked));
-  $('mapSection').hidden = !(mappable || hc);
+  $('sec-map').hidden = !(mappable || hc);
   $('mapRows').hidden = !mappable;
   const hueCol = $('hue').value, hueIdx = info ? info.columns.indexOf(hueCol) : -1;
   const hueNumeric = hueIdx >= 0 && info.numeric[hueIdx];
@@ -548,6 +597,15 @@ function updateVisibility() {
   document.querySelectorAll('.series .s-look').forEach((el) => { el.hidden = GROUPED.has(k) || k === 'kde'; });
   document.querySelectorAll('.series .s-markerrow').forEach((el) => { el.hidden = !(k === 'scatter' || k === 'linemarkers' || polar) || $('vector').checked; });
   document.querySelectorAll('.series .s-lsrow').forEach((el) => { el.hidden = !(k === 'line' || k === 'linemarkers' || k === 'step'); });
+  // collapse the series "more" box away when nothing inside applies to this plot type
+  document.querySelectorAll('.series .s-more').forEach((m) => {
+    m.hidden = [...m.querySelectorAll(':scope > .row, :scope > .row2, :scope > .row3')].every((el) => el.hidden);
+  });
+  // the plot-type section only appears for types with their own options
+  const typeIds = ['polarRows', 'histRows', 'kdeRows', 'bwRow', 'violinRow', 'distpointsRow'];
+  $('sec-type').hidden = typeIds.every((id) => $(id).hidden);
+  $('typeTitle').textContent = TYPE_TITLES[k] || 'Plot options';
+  updateBadges();
   $('violinRow').hidden = k !== 'violin';
   $('distpointsRow').hidden = !(k === 'box' || k === 'violin');
   $('xRow').hidden = hist || k === 'kde';
@@ -706,6 +764,7 @@ function renderPreview() {
     $('saveBrowser').disabled = false;
     $('saveProject').disabled = false;
     $('dlGroups').hidden = !r.ngroups;
+    updateBadges();
   } catch (e) { showError(e); }
 }
 
@@ -1068,6 +1127,7 @@ async function refreshSaved() {
   let items = [];
   try { items = (await DB.all()).filter((o) => o.id !== '__last__').sort((a, b) => b.saved - a.saved); } catch {}
   $('savedEmpty').hidden = items.length > 0;
+  setTimeout(updateBadges, 0);
   $('savedList').innerHTML = items.map((o) => `
     <div class="saved-item" data-id="${esc(o.id)}" title="Open this plot">
       ${o.thumb ? `<img src="${o.thumb}" alt="">` : '<span></span>'}
@@ -1204,6 +1264,19 @@ function fillWhereVals(want) {
 }
 function ssVisibility() {
   $('ssSdRow').hidden = $('ss-mode').value !== 'mean';
+  ssBadges();
+}
+function ssBadges() {
+  const set = (id, t) => { const el = $('b-' + id); if (el) el.textContent = t; };
+  const w = $('ss-wherecol').value;
+  set('ssdata', [$('ss-source').value ? 'sheet ' + $('ss-source').value : '', w ? `${w} = ${$('ss-whereval').value}` : 'all rows'].filter(Boolean).join(' · '));
+  set('sswhat', `${$('ss-mode').value === 'mean' ? 'mean' : '2σ'} of ${$('ss-value').value || '…'}`);
+  const f = [];
+  if ($('ss-amin').value || $('ss-amax').value) f.push(`angle ${$('ss-amin').value || '…'}–${$('ss-amax').value || '…'}`);
+  if ($('ss-dmin').value || $('ss-dmax').value) f.push(`Dpar ${$('ss-dmin').value || '…'}–${$('ss-dmax').value || '…'}`);
+  set('ssfilt', f.join(' · ') || 'none');
+  set('ssrand', `seed ${$('ss-seed').value}${+$('ss-ghosts').value ? ` · ${$('ss-ghosts').value} ghosts` : ''} · ±${$('ss-tol').value}%`);
+  set('sslook', $('ss-size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, '') || '');
 }
 
 function ssSchedule(d = 150) { clearTimeout(ssTimer); ssTimer = setTimeout(ssRender, d); }
@@ -1243,6 +1316,7 @@ document.querySelectorAll('[data-ss]').forEach((el) => {
       if (!ssTolTouched) $('ss-tol').value = el.value === 'mean' ? 2 : 10;
       ssVisibility();
     }
+    ssBadges();
     ssSchedule(k === 'seed' || k === 'ghosts' ? 250 : 120);
   });
 });
@@ -1287,6 +1361,23 @@ $('ssCsv').addEventListener('click', () => {
     download(`${baseName()}_running_${$('ss-mode').value}.csv`, new Blob([csv], { type: 'text/csv' }));
   } catch (e) { $('ssErr').textContent = String(e); }
 });
+
+// ---------------------------------------------------------------- sections: remember open / closed
+const SEC_KEY = 'sciplot-sections';
+(() => {
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem(SEC_KEY)) || {}; } catch {}
+  document.querySelectorAll('details.sec[id]').forEach((d) => {
+    if (d.id in st) d.open = !!st[d.id];
+    d.addEventListener('toggle', () => {
+      try {
+        const cur = JSON.parse(localStorage.getItem(SEC_KEY) || '{}');
+        cur[d.id] = d.open;
+        localStorage.setItem(SEC_KEY, JSON.stringify(cur));
+      } catch {}
+    });
+  });
+})();
 
 // ---------------------------------------------------------------- start-up
 DEFAULTS = getConfig({ withExcluded: false });

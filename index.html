@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -26,24 +26,8 @@
 
   <main class="layout" id="plotView">
     <aside class="controls">
-      <details class="sec" id="savedSection" open>
-        <summary>Saved plots</summary>
-        <div class="save-row">
-          <input type="text" id="saveName" placeholder="Name this plot">
-          <button type="button" id="saveBrowser" class="small" disabled>Save</button>
-        </div>
-        <div id="savedList" class="saved-list"></div>
-        <p class="hint" id="savedEmpty">Plots you save here (settings and data) stay in this browser. Your current plot is also kept automatically, so it reopens next time.</p>
-        <div class="actions">
-          <button type="button" id="newPlot" class="ghost small" title="Clear the current plot and data">New plot</button>
-          <button type="button" id="saveProject" class="ghost small" disabled title="One file with the settings and the data">Download project file</button>
-          <button type="button" id="openProject" class="ghost small" title="Open a .sciplot project, or a PNG/SVG/PDF exported from SciPlot">Open project or figure</button>
-          <input type="file" id="projectFile" accept=".sciplot,.json,.png,.svg,.pdf" hidden>
-        </div>
-      </details>
-
-      <details class="sec" open>
-        <summary>Data</summary>
+      <details class="sec" id="sec-data" open>
+        <summary>Data <span class="badge" id="b-data"></span></summary>
         <div id="drop" class="drop" tabindex="0" role="button">
           <strong>Drop a file here</strong> or click to choose<br>
           <span class="hint">.csv .txt .dat .tsv .xlsx .xls · or a .sciplot project / exported figure</span>
@@ -85,10 +69,10 @@
           <button type="button" id="calcAdd" class="ghost small">+ Add column</button>
           <div class="err" id="calcErr"></div>
         </details>
-      </details>
+            </details>
 
-      <details class="sec" open>
-        <summary>Plot</summary>
+      <details class="sec" id="sec-plot" open>
+        <summary>Plot <span class="badge" id="b-plot"></span></summary>
         <div class="row"><label for="kind">Type</label>
           <select id="kind" data-cfg>
             <optgroup label="X–Y">
@@ -112,21 +96,10 @@
         <p class="hint" id="groupHint" hidden>Choose a text column to split one series into groups, or leave as “(series)” to compare the Y series side by side.</p>
         <div id="seriesList"></div>
         <button type="button" id="addSeries" class="ghost small">+ Add series</button>
-        <div id="groupRows">
-          <label class="check"><input type="checkbox" id="groupstats" data-cfg> Group summary (mean / median per group)</label>
-          <div id="groupOpts" hidden>
-            <div class="row"><label for="groupby">Group by</label><select id="groupby" data-cfg data-col></select></div>
-            <div class="row"><label for="groupstat">Statistic</label>
-              <select id="groupstat" data-cfg><option value="mean">Mean</option><option value="median">Median</option><option value="mode">Mode (peak of density)</option></select></div>
-            <div class="row"><label for="groupspread">Error bars</label>
-              <select id="groupspread" data-cfg><option value="sd">± 1 SD</option><option value="se">± 1 SE</option><option value="ci95">± 95% CI</option><option value="iqr">Interquartile range</option><option value="range">Min – max</option><option value="none">None</option></select></div>
-            <div class="row"><label for="groupcolor">Colour</label>
-              <select id="groupcolor" data-cfg><option value="">White, black outline</option><option value="series">Series colour</option><option value="#BE5103">Orange</option><option value="black">Black</option><option value="#0072B2">Blue</option></select></div>
-            <div class="row"><label for="groupsize">Marker size</label><input type="number" id="groupsize" data-cfg value="7" min="1" step="0.5"></div>
-            <label class="check"><input type="checkbox" id="groupline" data-cfg checked> Join groups with a line</label>
-            <p class="hint">Uses the main table's series. Group by “X values” gives one point per X (e.g. per grain orientation after combining sheets). The full table can be downloaded under Export.</p>
-          </div>
-        </div>
+      </details>
+
+      <details class="sec" id="sec-type" open>
+        <summary><span id="typeTitle">Plot options</span></summary>
         <div id="polarRows" hidden>
           <div class="row"><label for="polstyle">Polar style</label>
             <select id="polstyle" data-cfg>
@@ -171,10 +144,10 @@
         <div class="row" id="violinRow" hidden><label for="violininner">Inside violin</label>
           <select id="violininner" data-cfg><option value="box">Mini box plot</option><option value="quart">Quartile lines</option><option value="stick">Line per value</option><option value="point">Point per value</option></select></div>
         <label class="check" id="distpointsRow" hidden><input type="checkbox" id="distpoints" data-cfg> Overlay individual values</label>
-      </details>
+            </details>
 
-      <details class="sec" id="mapSection" open>
-        <summary>Colour, size &amp; shape</summary>
+      <details class="sec" id="sec-map"><!-- mapSection -->
+        <summary>Colour, size &amp; shape <span class="badge" id="b-map"></span></summary>
         <div id="mapRows">
           <p class="hint">Map columns onto the points (scatter and line + markers).</p>
           <div class="row"><label for="hue">Colour by</label><select id="hue" data-cfg data-col></select></div>
@@ -221,10 +194,11 @@
           <label class="check" id="huelogRow"><input type="checkbox" id="huelog" data-cfg> Log colour scale</label>
           <div class="row"><label for="huelabel">Colour bar label</label><input type="text" id="huelabel" data-cfg placeholder="column name"></div>
         </div>
-      </details>
+            </details>
 
-      <details class="sec" open>
-        <summary>Reference lines</summary>
+      <details class="sec" id="sec-stats">
+        <summary>Statistics &amp; lines <span class="badge" id="b-stats"></span></summary>
+        <h3 class="subhead">Mean / median lines</h3>
         <div class="checks4">
           <label class="check"><input type="checkbox" id="refmean" data-cfg> Mean</label>
           <label class="check"><input type="checkbox" id="refmedian" data-cfg> Median</label>
@@ -253,13 +227,41 @@
         <div class="row"><label for="refwidth">Line width</label><input type="number" id="refwidth" data-cfg value="0.9" min="0.2" step="0.1"></div>
         <div class="row"><label for="refalpha">Band opacity</label><input type="number" id="refalpha" data-cfg value="0.12" min="0.02" max="1" step="0.02"></div>
         <label class="check"><input type="checkbox" id="reflegend" data-cfg checked> Show values in legend</label>
+
+        <h3 class="subhead">Fixed lines</h3>
         <div class="row"><label for="hlines">Lines at y =</label><input type="text" id="hlines" data-cfg placeholder="e.g. 10, 25"></div>
         <div class="row" id="vlinesRow"><label for="vlines">Lines at x =</label><input type="text" id="vlines" data-cfg placeholder="e.g. 0"></div>
         <label class="check" id="oneoneRow"><input type="checkbox" id="oneone" data-cfg> 1:1 line</label>
+      
+        <h3 class="subhead">Fits</h3>
+        <p class="hint">Choose a fit in each series box. Click points on the plot (Exclude tool) to leave them out of the fit.</p>
+        <label class="check"><input type="checkbox" id="fitlegend" data-cfg checked> Fit equation in legend</label>
+        <label class="check"><input type="checkbox" id="weightedfit" data-cfg> Weight fit by 1/σ (Y error column)</label>
+        <div class="row"><label for="ci">Confidence band</label>
+          <select id="ci" data-cfg><option value="0">None</option><option value="68">68% (≈1σ)</option><option value="95">95%</option><option value="99">99%</option></select></div>
+        <p class="hint">Bands are bootstrapped by seaborn's <code>regplot</code>.</p>
+        <label class="check"><input type="checkbox" id="showexcluded" data-cfg checked> Show excluded points as grey ×</label>
+      
+        <h3 class="subhead">Group summary</h3>
+        <div id="groupRows">
+          <label class="check"><input type="checkbox" id="groupstats" data-cfg> Group summary (mean / median per group)</label>
+          <div id="groupOpts" hidden>
+            <div class="row"><label for="groupby">Group by</label><select id="groupby" data-cfg data-col></select></div>
+            <div class="row"><label for="groupstat">Statistic</label>
+              <select id="groupstat" data-cfg><option value="mean">Mean</option><option value="median">Median</option><option value="mode">Mode (peak of density)</option></select></div>
+            <div class="row"><label for="groupspread">Error bars</label>
+              <select id="groupspread" data-cfg><option value="sd">± 1 SD</option><option value="se">± 1 SE</option><option value="ci95">± 95% CI</option><option value="iqr">Interquartile range</option><option value="range">Min – max</option><option value="none">None</option></select></div>
+            <div class="row"><label for="groupcolor">Colour</label>
+              <select id="groupcolor" data-cfg><option value="">White, black outline</option><option value="series">Series colour</option><option value="#BE5103">Orange</option><option value="black">Black</option><option value="#0072B2">Blue</option></select></div>
+            <div class="row"><label for="groupsize">Marker size</label><input type="number" id="groupsize" data-cfg value="7" min="1" step="0.5"></div>
+            <label class="check"><input type="checkbox" id="groupline" data-cfg checked> Join groups with a line</label>
+            <p class="hint">Uses the main table's series. Group by “X values” gives one point per X (e.g. per grain orientation after combining sheets). The full table can be downloaded under Export.</p>
+          </div>
+        </div>
       </details>
 
-      <details class="sec" open>
-        <summary>Axes</summary>
+      <details class="sec" id="sec-axes">
+        <summary>Axes <span class="badge" id="b-axes"></span></summary>
         <div class="row"><label for="title">Title</label><input type="text" id="title" data-cfg></div>
         <div class="row"><label for="xlabel">X label</label><input type="text" id="xlabel" data-cfg placeholder="column name"></div>
         <div class="row"><label for="ylabel">Y label</label><input type="text" id="ylabel" data-cfg placeholder="column name"></div>
@@ -276,10 +278,12 @@
         <label class="check"><input type="checkbox" id="minor" data-cfg checked> Minor ticks</label>
         <div class="row"><label for="grid">Grid</label><select id="grid" data-cfg><option value="none">None</option><option value="major">Major</option><option value="both">Major + minor</option></select></div>
         <div class="row"><label for="xrot">X tick angle</label><input type="number" id="xrot" data-cfg value="0" step="15" min="0" max="90"></div>
-      </details>
+            </details>
 
-      <details class="sec" open>
-        <summary>Style</summary>
+      <details class="sec" id="sec-style">
+        <summary>Style <span class="badge" id="b-style"></span></summary>
+
+        <h3 class="subhead">Figure</h3>
         <div class="row"><label for="size">Figure size</label>
           <select id="size" data-cfg>
             <option value="single">Single column (89 mm)</option>
@@ -298,9 +302,13 @@
             <option value="darkgrid">seaborn darkgrid</option>
           </select></div>
         <label class="check"><input type="checkbox" id="despine" data-cfg> Remove top and right axes (despine)</label>
+
+        <h3 class="subhead">Text</h3>
         <div class="row"><label for="font">Font</label>
           <select id="font" data-cfg><option value="sans">Sans (DejaVu)</option><option value="serif">Serif (STIX, Times-like)</option><option value="cm">Computer Modern (LaTeX)</option></select></div>
         <div class="row"><label for="fontsize">Font size (pt)</label><input type="number" id="fontsize" data-cfg value="9" min="5" max="24"></div>
+
+        <h3 class="subhead">Colours &amp; markers</h3>
         <div class="row"><label for="palette">Colours</label>
           <select id="palette" data-cfg>
             <optgroup label="Colour-blind safe">
@@ -342,31 +350,37 @@
         <div class="row"><label for="markersize">Marker size</label><input type="number" id="markersize" data-cfg value="4" step="0.5" min="1"></div>
         <div class="row"><label for="linewidth">Line width</label><input type="number" id="linewidth" data-cfg value="1.2" step="0.1" min="0.2"></div>
         <div class="row"><label for="capsize">Error bar caps</label><input type="number" id="capsize" data-cfg value="2" step="0.5" min="0"></div>
+
+        <h3 class="subhead">Legend &amp; labels</h3>
         <div class="row"><label for="legend">Legend</label>
           <select id="legend" data-cfg><option value="best">Best position (below if it has colour/size/shape keys)</option><option value="upper left">Upper left</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="lower right">Lower right</option><option value="outside">Outside, right</option><option value="below">Below plot</option><option value="off">Off</option></select></div>
         <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
         <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
         <div class="row"><label for="panel">Panel label</label><input type="text" id="panel" data-cfg placeholder="e.g. (a)"></div>
-      </details>
+            </details>
 
-      <details class="sec" open>
-        <summary>Fitting</summary>
-        <p class="hint">Choose a fit in each series box. Click points on the plot (Exclude tool) to leave them out of the fit.</p>
-        <label class="check"><input type="checkbox" id="fitlegend" data-cfg checked> Fit equation in legend</label>
-        <label class="check"><input type="checkbox" id="weightedfit" data-cfg> Weight fit by 1/σ (Y error column)</label>
-        <div class="row"><label for="ci">Confidence band</label>
-          <select id="ci" data-cfg><option value="0">None</option><option value="68">68% (≈1σ)</option><option value="95">95%</option><option value="99">99%</option></select></div>
-        <p class="hint">Bands are bootstrapped by seaborn's <code>regplot</code>.</p>
-        <label class="check"><input type="checkbox" id="showexcluded" data-cfg checked> Show excluded points as grey ×</label>
-      </details>
-
-      <section class="actions">
+      <details class="sec" id="sec-saved">
+        <summary>Saved plots &amp; settings <span class="badge" id="b-saved"></span></summary>
+        <div class="save-row">
+          <input type="text" id="saveName" placeholder="Name this plot">
+          <button type="button" id="saveBrowser" class="small" disabled>Save</button>
+        </div>
+        <div id="savedList" class="saved-list"></div>
+        <p class="hint" id="savedEmpty">Plots you save here (settings and data) stay in this browser. Your current plot is also kept automatically, so it reopens next time.</p>
+        <div class="actions">
+          <button type="button" id="newPlot" class="ghost small" title="Clear the current plot and data">New plot</button>
+          <button type="button" id="saveProject" class="ghost small" disabled title="One file with the settings and the data">Download project file</button>
+          <button type="button" id="openProject" class="ghost small" title="Open a .sciplot project, or a PNG/SVG/PDF exported from SciPlot">Open project or figure</button>
+          <input type="file" id="projectFile" accept=".sciplot,.json,.png,.svg,.pdf" hidden>
+        </div>
+              <div class="actions">
         <button type="button" id="copyLink" class="ghost small">Copy link to these settings</button>
         <button type="button" id="saveCfg" class="ghost small" title="Settings only, no data: reuse a style on other datasets">Save style</button>
         <button type="button" id="loadCfg" class="ghost small">Apply style</button>
         <input type="file" id="cfgFile" accept=".json" hidden>
         <button type="button" id="reset" class="ghost small">Reset settings</button>
-      </section>
+              </div>
+      </details>
     </aside>
 
     <section class="views">
@@ -424,39 +438,39 @@
 
   <main class="layout" id="ssView" hidden>
     <aside class="controls">
-      <details class="sec" open>
-        <summary>Data</summary>
+      <details class="sec" id="sec-ssdata" open>
+        <summary>Data <span class="badge" id="b-ssdata"></span></summary>
         <p class="hint" id="ssNoData">Load data on the <b>Plot</b> tab first; it is shared with this tab (including combined sheets and calculated columns).</p>
         <div class="row" id="ssSourceRow"><label for="ss-source">Data from</label><select id="ss-source" data-ss></select></div>
         <div class="row"><label for="ss-wherecol">Only rows where</label><select id="ss-wherecol" data-ss></select></div>
         <div class="row" id="ssWhereValRow"><label for="ss-whereval">equals</label><select id="ss-whereval" data-ss></select></div>
         <p class="hint">e.g. <i>Grain Orientation</i> = 10 to look at one tilt of the combined sheets.</p>
       </details>
-      <details class="sec" open>
-        <summary>What to track</summary>
+      <details class="sec" id="sec-sswhat" open>
+        <summary>What to track <span class="badge" id="b-sswhat"></span></summary>
         <div class="row"><label for="ss-mode">Track</label>
           <select id="ss-mode" data-ss><option value="mean">Running mean</option><option value="2sd">Running 2σ (2 × SD)</option></select></div>
         <div class="row"><label for="ss-value">of column</label><select id="ss-value" data-ss></select></div>
         <p class="hint">Values are drawn in a random order without replacement; the plot shows the statistic of the first <i>n</i> as measurements are added.</p>
       </details>
-      <details class="sec" open>
-        <summary>Filters</summary>
+      <details class="sec" id="sec-ssfilt">
+        <summary>Filters <span class="badge" id="b-ssfilt"></span></summary>
         <div class="row"><label for="ss-anglecol">Angle column</label><select id="ss-anglecol" data-ss></select></div>
         <div class="row"><label>Angle range</label><div class="pair"><input type="text" id="ss-amin" data-ss placeholder="min"><input type="text" id="ss-amax" data-ss placeholder="max"></div></div>
         <div class="row"><label for="ss-dparcol">Dpar column</label><select id="ss-dparcol" data-ss></select></div>
         <div class="row"><label>Dpar range</label><div class="pair"><input type="text" id="ss-dmin" data-ss placeholder="min"><input type="text" id="ss-dmax" data-ss placeholder="max"></div></div>
         <p class="hint">A Dpar range simulates measuring only within that window; a dash-dot line shows the value before the cut, so you can see any bias it introduces.</p>
       </details>
-      <details class="sec" open>
-        <summary>Random draws</summary>
+      <details class="sec" id="sec-ssrand">
+        <summary>Random draws <span class="badge" id="b-ssrand"></span></summary>
         <div class="row"><label for="ss-seed">Seed</label><input type="number" id="ss-seed" data-ss value="1" step="1"><button type="button" id="ssNewOrder" class="ghost small">New random order</button></div>
         <div class="row"><label for="ss-ghosts">Ghost runs</label><input type="number" id="ss-ghosts" data-ss value="0" min="0" max="200" step="1" title="Other random orders drawn faintly; also gives the median and 90th-percentile n"></div>
         <div class="row"><label for="ss-tol">Tolerance ±%</label><input type="number" id="ss-tol" data-ss value="2" min="0.1" step="0.5" title="'Stays within' readout: % of the full-data value"></div>
         <label class="check"><input type="checkbox" id="ss-funnel" data-ss checked> Expected 95% spread (dashed)</label>
         <label class="check" id="ssSdRow"><input type="checkbox" id="ss-sdlines" data-ss checked> ± 1 SD of the data (dotted)</label>
       </details>
-      <details class="sec">
-        <summary>Look</summary>
+      <details class="sec" id="sec-sslook">
+        <summary>Look <span class="badge" id="b-sslook"></span></summary>
         <div class="row"><label for="ss-size">Figure size</label>
           <select id="ss-size" data-ss><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option></select></div>
         <div class="row"><label for="ss-smooth">Line smoothing</label><input type="number" id="ss-smooth" data-ss value="5" min="1" max="101" step="2"></div>
@@ -508,6 +522,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=16"></script>
+  <script type="module" src="app.js?v=17"></script>
 </body>
 </html>
