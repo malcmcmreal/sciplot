@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -208,7 +208,7 @@
         <div class="row" id="refaxisRow"><label for="refaxis">For the plot's</label>
           <select id="refaxis" data-cfg><option value="y">Y values (horizontal line)</option><option value="x">X values (vertical line)</option><option value="both">X and Y</option><option value="none">— none (only other columns) —</option></select></div>
         <div id="refExtraList"></div>
-        <button type="button" id="refExtraAdd" class="ghost small">+ Mean/median of another column</button>
+        <button type="button" id="refExtraAdd" class="ghost small">+ Line from a column (mean, SD, min/max, formula…)</button>
         <div class="row"><label for="refband">Shade</label>
           <select id="refband" data-cfg><option value="0">No band</option><option value="1">± 1σ</option><option value="2">± 2σ</option></select></div>
         <div class="row"><label for="refcolor">Line colour</label>
@@ -522,6 +522,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=17"></script>
+  <script type="module" src="app.js?v=18"></script>
 </body>
 </html>

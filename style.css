@@ -243,3 +243,7 @@ details.sec > summary + h3.subhead, details.sec > h3.subhead:first-of-type { bor
 .series .s-more[open] > summary::before { transform: rotate(90deg); }
 .series .s-more > summary .s-badge { color: var(--link); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .series .s-more[open] > summary .s-badge { display: none; }
+
+.ref-row .r-fxbox { margin: 0.2rem 0 0.4rem; }
+.ref-row .r-fx { width: 100%; font-family: var(--mono); font-size: 0.78rem; }
+.ref-row .fx-hint { color: var(--muted); font-size: 0.68rem; margin-top: 0.2rem; line-height: 1.3; }

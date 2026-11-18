@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 14;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 15;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -345,6 +345,8 @@ function getRefExtra() {
   return [...document.querySelectorAll('.ref-row')].map((r) => ({
     col: r.querySelector('.r-col').value, axis: r.querySelector('.r-axis').value,
     err: r.querySelector('.r-err').value, color: r.querySelector('.r-color').value,
+    kind: r.querySelector('.r-kind').value, fx: r.querySelector('.r-fx').value,
+    ls: r.querySelector('.r-ls').value, label: r.querySelector('.r-label').value,
   })).filter((o) => o.col);
 }
 function addRefRow(o = {}) {
@@ -356,12 +358,38 @@ function addRefRow(o = {}) {
   r.className = 'ref-row';
   r.innerHTML = `<button type="button" class="rm" title="Remove">✕</button>
     <div class="row"><label>Column</label><select class="r-col">${opt(nums, o.col ?? nums[0])}</select></div>
+    <div class="row"><label>Line</label><select class="r-kind">
+      <option value="stats">Mean / median (ticked above)</option>
+      <option value="sd1">Mean ± 1 SD (two lines)</option>
+      <option value="sd2">Mean ± 2 SD (two lines)</option>
+      <option value="minmax">Min and max</option>
+      <option value="formula">Formula…</option></select></div>
+    <div class="r-fxbox" hidden>
+      <input type="text" class="r-fx" spellcheck="false" placeholder="e.g. mean(x) + 2*sd(x)   ·   max(x)   ·   percentile(x, 95)" value="${esc(o.fx || '')}">
+      <div class="fx-hint">x = this column · other columns by "name" · mean median sd var se min max percentile(x,p) quantile(x,q) iqr mad mode n · commas give several lines</div>
+    </div>
     <div class="row"><label>Draw as</label><select class="r-axis">
       <option value="y">Horizontal line (Y axis)</option><option value="x">Vertical line (X axis)</option></select></div>
-    <div class="row"><label>Error col.</label><select class="r-err">${opt(nums, o.err, 'none (for weighted mean)')}</select></div>
-    <div class="row"><label>Colour</label><select class="r-color">${REF_COLOURS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
+    <div class="row r-errrow"><label>Error col.</label><select class="r-err">${opt(nums, o.err, 'none (for weighted mean)')}</select></div>
+    <div class="row"><label>Colour</label><select class="r-color">${REF_COLOURS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>
+    <div class="row r-lsrow"><label>Style</label><select class="r-ls">
+      <option value="--">dashed</option><option value=":">dotted</option><option value="-.">dash-dot</option><option value="-">solid</option></select></div>
+    <div class="row"><label>Label</label><input type="text" class="r-label" placeholder="column name" value="${esc(o.label || '')}"></div>`;
   r.querySelector('.r-axis').value = o.axis || 'y';
   r.querySelector('.r-color').value = o.color || '';
+  r.querySelector('.r-kind').value = o.kind || 'stats';
+  r.querySelector('.r-ls').value = o.ls || '--';
+  const kindVis = () => {
+    const k = r.querySelector('.r-kind').value;
+    r.querySelector('.r-fxbox').hidden = k !== 'formula';
+    r.querySelector('.r-errrow').hidden = k !== 'stats';
+    r.querySelector('.r-lsrow').hidden = k === 'stats';
+  };
+  kindVis();
+  r.querySelector('.r-kind').addEventListener('change', kindVis);
+  let fxT = null;
+  r.querySelector('.r-fx').addEventListener('input', (e) => { e.stopPropagation(); clearTimeout(fxT); fxT = setTimeout(() => scheduleRender(0), 700); });
+  r.querySelector('.r-label').addEventListener('input', (e) => { e.stopPropagation(); clearTimeout(fxT); fxT = setTimeout(() => scheduleRender(0), 500); });
   const paint = () => r.style.setProperty('--rc', /^#|black/.test(r.querySelector('.r-color').value) ? r.querySelector('.r-color').value : '');
   paint();
   r.querySelector('.rm').addEventListener('click', () => { r.remove(); scheduleRender(0); });
@@ -378,7 +406,6 @@ function buildRefExtra() {
 }
 $('refExtraAdd').addEventListener('click', () => {
   addRefRow();
-  if (!$('refmean').checked && !$('refmedian').checked && !$('refwmean').checked) $('refmean').checked = true;
   scheduleRender(0);
 });
 function fillColumnsInner(pref = {}) {
@@ -540,7 +567,9 @@ function updateBadges() {
   set('map', m.join(' · '));
   const s = [];
   const st = ['refmean', 'refmedian', 'refwmean'].filter((id) => $(id).checked).map((id) => ({ refmean: 'mean', refmedian: 'median', refwmean: 'wtd mean' })[id]);
-  if (st.length) s.push(st.join('/') + (document.querySelectorAll('.ref-row').length ? ` (+${document.querySelectorAll('.ref-row').length} col)` : ''));
+  if (st.length) s.push(st.join('/'));
+  const nRef = document.querySelectorAll('.ref-row').length;
+  if (nRef) s.push(`${nRef} column line${nRef > 1 ? 's' : ''}`);
   if ($('hlines').value || $('vlines').value || $('oneone').checked) s.push('fixed lines');
   if (getSeries().some((x) => x.fit)) s.push('fit' + (+$('ci').value ? ` ${$('ci').value}% band` : ''));
   if ($('groupstats').checked) s.push('group ' + $('groupstat').value);

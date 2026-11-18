@@ -629,11 +629,58 @@ def _ref_lines(ax, vals, err, c, color, prefix, axis, msgs):
         msgs.append(prefix + label)
 
 
+AGG_FUNCS = {
+    "mean": lambda a: float(np.nanmean(a)), "average": lambda a: float(np.nanmean(a)),
+    "median": lambda a: float(np.nanmedian(a)),
+    "sd": lambda a: float(np.nanstd(a, ddof=1)), "std": lambda a: float(np.nanstd(a, ddof=1)),
+    "var": lambda a: float(np.nanvar(a, ddof=1)),
+    "se": lambda a: float(np.nanstd(a, ddof=1) / np.sqrt(np.isfinite(a).sum())),
+    "min": lambda *a: float(np.nanmin(a[0])) if len(a) == 1 else float(np.nanmin(a)),
+    "max": lambda *a: float(np.nanmax(a[0])) if len(a) == 1 else float(np.nanmax(a)),
+    "sum": lambda a: float(np.nansum(a)), "count": lambda a: int(np.isfinite(a).sum()),
+    "n": lambda a: int(np.isfinite(a).sum()),
+    "percentile": lambda a, p: float(np.nanpercentile(a, p)),
+    "quantile": lambda a, q: float(np.nanquantile(a, q)),
+    "iqr": lambda a: float(np.subtract(*np.nanpercentile(a, [75, 25]))),
+    "mad": lambda a: float(1.4826 * np.nanmedian(np.abs(a - np.nanmedian(a)))),
+    "mode": lambda a: _mode_kde(np.asarray(a, float)[np.isfinite(a)]),
+    "wmean": lambda a, e: float(np.nansum(a / e ** 2) / np.nansum(1 / e ** 2)),
+}
+
+
+def eval_scalar(expr, df, x):
+    """Evaluate a reference-line formula to one or more numbers. `x` is the row's column;
+    other columns by "name" (or bare word); AGG_FUNCS + FORMULA_FUNCS available.
+    Comma-separated expressions give several values."""
+    import re
+    colset = set(df.columns)
+    e = re.sub(r'(["\'])(.+?)\1', lambda m: f"`{m.group(2)}`" if m.group(2) in colset else m.group(0), expr)
+    e = e.replace("^", "**").replace("×", "*").replace("÷", "/").replace("−", "-").replace("±", "+-")
+    e = re.sub(r"`([^`]+)`", lambda m: f"__c[{m.group(1)!r}]", e)
+    ns = dict(FORMULA_FUNCS)
+    ns.update(AGG_FUNCS)
+    ns["__c"] = {c: pd.to_numeric(df[c], errors="coerce").to_numpy(float) for c in df.columns
+                 if pd.api.types.is_numeric_dtype(df[c])}
+    for c in df.columns:
+        if isinstance(c, str) and c.isidentifier() and c not in ns and c in ns["__c"]:
+            ns[c] = ns["__c"][c]
+    ns["x"] = np.asarray(x, float)
+    out = eval(compile(e, "<line formula>", "eval"), {"__builtins__": {}}, ns)
+    vals = list(out) if isinstance(out, (tuple, list)) else [out]
+    res = []
+    for v in vals:
+        v = np.asarray(v, float)
+        if v.ndim:                    # an array (e.g. "x"): summarise it is ambiguous -> reject
+            raise ValueError("the formula gives a whole column, not a single value – wrap it in mean(), max() …")
+        res.append(float(v))
+    return res
+
+
 def _ref_extra(ax, df, c, msgs, force_axis=None):
-    """Mean / median lines of other columns (not the plotted ones): refextra = [{col, axis, color}]."""
-    if not any(c.get(k) for k in ("refmean", "refmedian", "refwmean")):
-        return
+    """Lines for other columns: refextra = [{col, axis, color, kind, fx, ls, label, err}].
+    kind: "stats" (ticked mean/median/wtd mean), "sd1"/"sd2" (mean ± k·SD), "minmax", "formula"."""
     keep = ~df.index.isin([int(r) for r in c.get("excluded", [])])
+    any_stat = any(c.get(k) for k in ("refmean", "refmedian", "refwmean"))
     for item in c.get("refextra") or []:
         col = item.get("col")
         if col not in df.columns:
@@ -641,15 +688,47 @@ def _ref_extra(ax, df, c, msgs, force_axis=None):
         v = pd.to_numeric(df.loc[keep, col], errors="coerce").dropna()
         if not len(v):
             continue
-        ecol = item.get("err")
-        err = pd.to_numeric(df.loc[v.index, ecol], errors="coerce").values if ecol in df.columns else None
         axis = force_axis or item.get("axis", "y")
-        cc = {**c, "refwmean": bool(c.get("refwmean")) and err is not None}
-        if item.get("color"):
-            cc["refcolor"], cc["refcustom"] = item["color"], item["color"]
-        elif not c.get("refcolor"):
-            cc["refcolor"] = "black"
-        _ref_lines(ax, v.values, err, cc, "black", f"{col}: ", axis, msgs)
+        kind = item.get("kind") or "stats"
+        rc = item.get("color") or (c.get("refcustom") if c.get("refcolor") == "custom" else c.get("refcolor")) or "black"
+        if kind == "stats":
+            if not any_stat:
+                continue
+            ecol = item.get("err")
+            err = pd.to_numeric(df.loc[v.index, ecol], errors="coerce").values if ecol in df.columns else None
+            cc = {**c, "refwmean": bool(c.get("refwmean")) and err is not None, "refcolor": rc, "refcustom": rc}
+            _ref_lines(ax, v.values, err, cc, "black", f"{item.get('label') or col}: ", axis, msgs)
+            continue
+        vals = v.values.astype(float)
+        try:
+            if kind in ("sd1", "sd2"):
+                k = 1 if kind == "sd1" else 2
+                m, sd = float(np.mean(vals)), float(np.std(vals, ddof=1))
+                lines = [m - k * sd, m + k * sd]
+                desc = f"mean ± {k} SD = {_fmt_pm(m, k * sd)}"
+            elif kind == "minmax":
+                lines = [float(vals.min()), float(vals.max())]
+                desc = f"min–max = {lines[0]:.4g} – {lines[1]:.4g}"
+            else:
+                expr = (item.get("fx") or "").strip()
+                if not expr:
+                    continue
+                lines = eval_scalar(expr, df.loc[keep], vals)
+                desc = f"{expr} = " + ", ".join(f"{q:.4g}" for q in lines)
+        except Exception as e:
+            msgs.append(f"{col} line: {str(e).replace('__c[', '[')}")
+            continue
+        ls = LINESTYLES.get(item.get("ls") or "--", "--")
+        if ax.name == "polar":
+            draw, _ = _polar_ref(ax, axis)
+        else:
+            draw = ax.axhline if axis == "y" else ax.axvline
+        label = f"{item.get('label') or col}: {desc}"
+        for i, q in enumerate(lines):
+            if np.isfinite(q):
+                draw(q, color=rc, linestyle=ls, linewidth=_num(c.get("refwidth")) or 0.9, zorder=3,
+                     label=label if (i == 0 and c.get("reflegend", True)) else None)
+        msgs.append(label)
 
 
 def _custom_lines(ax, c, kind):
@@ -1349,6 +1428,20 @@ def _legend(fig, ax, c, series, extra):
         else:
             L = ax.legend(h, l, loc=leg)
             L.set_in_layout(False)
+            fig.canvas.draw()
+            if L.get_window_extent().width > ax.get_window_extent().width * 0.95:
+                L.remove()                      # too wide to sit inside the axes: put it underneath
+                import textwrap
+                fs = plt.rcParams["legend.fontsize"]
+                fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9) - 1
+                for width, size in ((60, fs), (48, fs), (40, fs - 1), (34, fs - 2)):
+                    lw = ["\n".join(textwrap.wrap(t, width)) or t for t in l]
+                    L = fig.legend(h, lw, loc="outside lower center", ncols=1, fontsize=size)
+                    fig.canvas.draw()
+                    if L.get_window_extent().width <= fig.bbox.width * 0.98:
+                        break
+                    L.remove()
+                l = lw
     if leg != "off" and h:
         for txt, lab in zip(L.get_texts(), l):
             if any(lab == e[1] and isinstance(e[0], Rectangle) for e in extra):
