@@ -172,6 +172,10 @@ def load_file(path, name, header="auto", sheet=None, headerrow=1, skipafter=0, a
     headerrow = max(1, int(headerrow or 1))
     sheets = []
     DATA["tables"] = {}
+    DATA["load"] = {"path": path, "header": header, "headerrow": headerrow, "skipafter": skipafter,
+                    "allsheets": bool(allsheets)}
+    DATA["calc"] = "[]"
+    DATA["sheetdf"] = {}
     if ext in ("xlsx", "xlsm", "xls", "ods"):
         xl = pd.ExcelFile(path)
         sheets = xl.sheet_names
@@ -280,6 +284,8 @@ def add_columns(calc_json):
     can use earlier ones. Returns load-style JSON for the updated table."""
     df = DATA["base"].copy()
     msgs = []
+    DATA["calc"] = calc_json or "[]"
+    DATA["sheetdf"] = {}
     for item in json.loads(calc_json or "[]"):
         name, expr = str(item.get("name", "")).strip(), str(item.get("expr", "")).strip()
         if not name or not expr:
@@ -1724,6 +1730,34 @@ def _share_limits(cells, which, group):
             (a.set_xlim if which == "x" else a.set_ylim)((hi, lo) if f else (lo, hi))
 
 
+def _panel_frame(sheet):
+    """The table a panel plots: the loaded sheet, or another sheet of the same workbook read
+    with the same header settings and calculated columns (cached)."""
+    ld = DATA.get("load") or {}
+    if not sheet or ld.get("allsheets") or sheet == DATA.get("sheet") or sheet not in (DATA.get("sheets") or []):
+        return DATA["df"]
+    cache = DATA.setdefault("sheetdf", {})
+    if sheet in cache:
+        return cache[sheet]
+    header, headerrow = ld.get("header", "auto"), max(1, int(ld.get("headerrow") or 1))
+    raw = pd.ExcelFile(ld["path"]).parse(sheet, header=None)
+    if header == "row":
+        raw = raw.iloc[headerrow - 1:]
+    df = _apply_header(raw.reset_index(drop=True), "yes" if header == "row" else header)
+    if ld.get("skipafter") and header == "row":
+        df = df.iloc[int(ld["skipafter"]):]
+    df = _coerce(df)
+    for item in json.loads(DATA.get("calc") or "[]"):
+        name, expr = str(item.get("name", "")).strip(), str(item.get("expr", "")).strip()
+        if name and expr:
+            try:
+                df[name] = eval_formula(expr, df)
+            except Exception:
+                pass
+    cache[sheet] = df
+    return df
+
+
 def render_layout(payload_json, fmt="png", dpi=200, meta=""):
     """Several panels in a grid. payload = {layout, panels: [cfg...], active, excluded}."""
     import math
@@ -1756,12 +1790,16 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         gs = fig.add_gridspec(rows, cols)
     for i, pc in enumerate(panels):
         r, col = divmod(i, cols)
-        pc = {**pc, "_multi": True, "excluded": P.get("excluded", [])}
+        sheet = pc.get("sheet") or DATA.get("sheet")
+        ex = P.get("excluded", [])
+        if isinstance(ex, dict):
+            ex = ex.get(sheet or "", [])
+        pc = {**pc, "_multi": True, "excluded": ex}
         n0 = len(groups)
         with plt.rc_context(_style(pc)):
             ax = fig.add_subplot(gs[r, col], projection="polar" if pc.get("kind") == "polar" else None)
             try:
-                msgs, pts = draw_panel(fig, ax, pc, df, groups)
+                msgs, pts = draw_panel(fig, ax, pc, _panel_frame(pc.get("sheet")), groups)
             except Exception as e:
                 ax.clear()
                 ax.text(0.5, 0.5, f"Panel {_panel_label(i, '(a)')}: {e}", ha="center", va="center",

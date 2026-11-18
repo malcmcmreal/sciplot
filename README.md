@@ -42,7 +42,7 @@ Live: https://malcmcmreal.github.io/sciplot/
 
 Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
 
-Data settings (file, header row, combined sheets, calculated columns, excluded points) are shared by all panels. Overall controls are under **Figure layout**:
+Each panel can plot a different sheet of the workbook: activate the panel, then pick its sheet. Header settings, combined sheets and calculated columns are shared by all panels, and excluded points are remembered per sheet. Overall controls are under **Figure layout**:
 
 - columns
 - figure size: journal single, 1.5 or double column, or custom

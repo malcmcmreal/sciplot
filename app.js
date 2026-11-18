@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 16;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 17;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -13,7 +13,9 @@ let PYSRC = '';           // plotter.py source (also offered as a download)
 let info = null;          // columns / preview returned by load_file
 let curFile = null;       // { name, bytes, sheet }
 let pending = null;       // { x, series } to apply once data is loaded
-let excluded = new Set(); // excluded row indices (0-based)
+let excluded = new Set(); // excluded row indices (0-based) of the loaded sheet
+let exclBySheet = {};     // exclusions kept for the workbook's other sheets (multi-panel figures)
+const sheetKey = (s) => s ?? '';
 let tool = 'zoom';
 let last = null;          // last preview render { geom, points }
 let renderTimer = null;
@@ -81,6 +83,7 @@ async function setFile(name, bytes) {
     document.querySelectorAll('.fx-box').forEach((b) => b.remove());
   }
   curFile = { name, bytes, sheet: null };
+  exclBySheet = {};
   $('fname').textContent = name;
   excluded.clear();
   if (py && PYSRC) loadData();
@@ -290,7 +293,7 @@ function applyCalc() {
   } catch (e) { showError(e); }
 }
 $('calcAdd').addEventListener('click', () => addCalcRow());
-$('allsheets').addEventListener('change', () => { excluded.clear(); curFile && py && loadData(); });
+$('allsheets').addEventListener('change', () => { excluded.clear(); exclBySheet = {}; curFile && py && loadData(); });
 let sheetcolTimer = null;
 $('sheetcol').addEventListener('input', () => { clearTimeout(sheetcolTimer); sheetcolTimer = setTimeout(() => { if ($('allsheets').checked && curFile && py) loadData(); }, 700); });
 
@@ -317,10 +320,16 @@ $('rawTable').addEventListener('click', (e) => {
   if (!tr) return;
   $('header').value = 'row';
   $('headerrow').value = tr.dataset.n;
-  excluded.clear();
+  excluded.clear(); exclBySheet = {};
   reloadHeader();
 });
-$('sheet').addEventListener('change', () => { excluded.clear(); loadData($('sheet').value); });
+$('sheet').addEventListener('change', () => { switchSheet($('sheet').value); loadData($('sheet').value); });
+function switchSheet(s) {
+  if (!curFile || sheetKey(s) === sheetKey(curFile.sheet)) return;
+  exclBySheet[sheetKey(curFile.sheet)] = excluded;
+  excluded = exclBySheet[sheetKey(s)] || new Set();
+  delete exclBySheet[sheetKey(s)];
+}
 
 // ---------------------------------------------------------------- columns & series
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
@@ -682,7 +691,7 @@ function getConfig({ withExcluded = true } = {}) {
   return c;
 }
 
-function applyConfig(c) {
+function applyConfig(c, opts = {}) {
   const cols = {};
   for (const el of cfgEls()) {
     if (!(el.id in c) || el.id === 'x') continue;
@@ -701,7 +710,7 @@ function applyConfig(c) {
   if (c.skipafter !== undefined) $('skipafter').value = c.skipafter;
   if (Array.isArray(c.excluded)) excluded = new Set(c.excluded);
   const pref = { x: c.x ?? $('x').value, series: c.series || [], cols };
-  if (info) fillColumns(pref); else pending = pref;
+  if (info && !opts.defer) fillColumns(pref); else pending = pref;
   updateVisibility();
 }
 
@@ -1084,7 +1093,10 @@ function b64utf8(str) { return bytesToB64(new TextEncoder().encode(str)); }
 
 function buildProject({ withData = true, base64 = false } = {}) {
   const p = { sciplot: 1, saved: new Date().toISOString(), cfg: getConfig() };
-  if (multi()) { syncActive(); p.figure = { layout: layoutCfg(), panels: figure.panels, active: figure.active }; }
+  if (multi()) {
+    const lp = layoutPayload();
+    p.figure = { layout: lp.layout, panels: lp.panels, active: lp.active, excluded: lp.excluded };
+  }
   if (curFile) {
     p.file = { name: curFile.name, sheet: curFile.sheet ?? null };
     if (withData) p.file[base64 ? 'b64' : 'bytes'] = base64 ? bytesToB64(curFile.bytes) : curFile.bytes;
@@ -1098,6 +1110,9 @@ function restoreProject(p, how = 'Opened') {
   if (p.figure?.panels?.length) {
     figure = { panels: p.figure.panels, active: p.figure.active || 0 };
     applyLayout(p.figure.layout || {});
+    exclBySheet = {};
+    const s0 = sheetKey(p.cfg.sheet ?? p.file?.sheet);
+    Object.entries(p.figure.excluded || {}).forEach(([k, v]) => { if (k !== s0) exclBySheet[k] = new Set(v); });
   } else {
     figure = { panels: [null], active: 0 };
   }
@@ -1240,7 +1255,7 @@ $('bannerClose').addEventListener('click', hideBanner);
 async function startFresh() {
   try { await DB.del('__last__'); } catch {}
   try { localStorage.removeItem(LS_KEY); } catch {}
-  curFile = null; info = null; last = null; excluded.clear(); keepSetup = false;
+  curFile = null; info = null; last = null; excluded.clear(); exclBySheet = {}; keepSetup = false;
   figure = { panels: [null], active: 0 };
   renderPanelBar();
   applyConfig({ ...DEFAULTS, series: [], calc: [] });
@@ -1440,7 +1455,7 @@ $('ssCsv').addEventListener('click', () => {
 // ---------------------------------------------------------------- panels (multi-panel figures)
 // Each panel keeps its own complete settings; the sidebar edits the active one. Data-level
 // settings (file, header, combined sheets, calculated columns, excluded rows) are shared.
-const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'sheet', 'excluded', 'ss', 'view'];
+const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view'];
 const STYLE_KEYS = ['font', 'fontsize', 'theme', 'despine', 'ticks', 'palette', 'markerfill', 'varymarkers',
   'markersize', 'linewidth', 'capsize', 'legendframe', 'minor', 'alpha'];
 var figure = { panels: [null], active: 0 };   // var + function: usable before this point
@@ -1463,7 +1478,12 @@ function applyLayout(o) {
 }
 function layoutPayload() {
   syncActive();
-  return { layout: layoutCfg(), panels: figure.panels, active: figure.active, excluded: [...excluded] };
+  const ex = {};
+  Object.entries(exclBySheet).forEach(([k, v]) => { ex[k] = [...v]; });
+  ex[sheetKey(curFile?.sheet)] = [...excluded];
+  const cur = curFile?.sheet;
+  const panels = figure.panels.map((p) => (p.sheet || !cur ? p : { ...p, sheet: cur }));
+  return { layout: layoutCfg(), panels, active: figure.active, excluded: ex };
 }
 function panelLetter(i) {
   const st = $('lay-labels').value;
@@ -1486,9 +1506,11 @@ function activatePanel(i) {
   if (i === figure.active || i < 0 || i >= figure.panels.length) return;
   syncActive();
   figure.active = i;
-  applyConfig(figure.panels[i]);
+  const p = figure.panels[i];
+  const other = curFile && !$('allsheets').checked && p.sheet && sheetKey(p.sheet) !== sheetKey(curFile.sheet);
+  applyConfig(p, { defer: other });          // other sheet: pick columns once its table is loaded
   renderPanelBar();
-  scheduleRender(0);
+  if (other) { switchSheet(p.sheet); loadData(p.sheet); } else scheduleRender(0);
 }
 function addPanel(duplicate) {
   if (!info) return;
@@ -1503,6 +1525,7 @@ function addPanel(duplicate) {
     STYLE_KEYS.forEach((k) => { if (k in cur) p[k] = cur[k]; });   // keep the figure's look
     p.series = [];
     p.refextra = [];
+    if (cur.sheet) p.sheet = cur.sheet;
   }
   p.panel = '';
   figure.panels.splice(figure.active + 1, 0, p);
