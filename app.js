@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 17;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 19;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -433,6 +433,7 @@ function fillColumnsInner(pref = {}) {
   const keep = (pref.series || []).filter((s) => (s.source
     ? (info.tables?.[s.source]?.columns || []).includes(s.y) : cols.includes(s.y)));
   if (keep.length) keep.forEach((s) => addSeries(s));
+  else if ((pref.series || []).some((s) => s.y === '')) addSeries({ y: '' });   // blank panel
   else addSeries({ y: cols.find((c, i) => info.numeric[i] && c !== x) ?? cols[0] });
   updateVisibility();
 }
@@ -470,7 +471,7 @@ function addSeries(s = {}, replace = null) {
   d.innerHTML = `<button type="button" class="rm" title="Remove series">✕</button>
     ${srcRow}
     ${src ? `<div class="row s-xrow"><label>X</label><select class="s-x">${opts(s.x)}</select></div>` : ''}
-    <div class="row"><label>Y</label><select class="s-y">${opts(s.y)}</select></div>
+    <div class="row"><label>Y</label><select class="s-y">${s.y === '' ? opts('', '— choose a column —') : opts(s.y)}</select></div>
     <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
     <details class="s-more"${s.open ? ' open' : ''}><summary>Error bars, fit &amp; style <span class="s-badge"></span></summary>
     <div class="row s-err"><label>Y error</label><select class="s-yerr">${opts(s.yerr, 'none')}</select></div>
@@ -599,6 +600,7 @@ function updateBadges() {
     if ($('lay-sharex').value !== 'none') lb.push('shared X');
     if ($('lay-sharey').value !== 'none') lb.push('shared Y');
     if ($('lay-inner').value !== 'keep') lb.push('inner labels hidden');
+    if ($('lay-legend').value !== 'each') lb.push('shared key');
     set('layout', lb.join(' · '));
   }
   const n = document.querySelectorAll('.saved-item').length;
@@ -1523,8 +1525,10 @@ function addPanel(duplicate) {
     p = JSON.parse(JSON.stringify(DEFAULTS));
     DATA_KEYS.forEach((k) => delete p[k]);
     STYLE_KEYS.forEach((k) => { if (k in cur) p[k] = cur[k]; });   // keep the figure's look
-    p.series = [];
+    p.series = [{ y: '' }];          // starts empty: nothing is plotted until a Y column is chosen
+    p.x = '';
     p.refextra = [];
+    ['hue', 'sizeby', 'styleby', 'groupby', 'refcol'].forEach((k) => { p[k] = ''; });
     if (cur.sheet) p.sheet = cur.sheet;
   }
   p.panel = '';

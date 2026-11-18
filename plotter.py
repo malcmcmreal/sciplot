@@ -471,6 +471,8 @@ class Mapping:
             vv = v.astype(float)
             lo = _num(c.get("huemin"))
             hi = _num(c.get("huemax"))
+            lo = lo if lo is not None else c.get("_hue_lo")     # figure-wide range (multi-panel)
+            hi = hi if hi is not None else c.get("_hue_hi")
             if c.get("huelog"):
                 pos = vv[vv > 0]
                 lo = lo if lo is not None else (pos.min() if len(pos) else 1)
@@ -486,6 +488,8 @@ class Mapping:
                     "cmap": _cmap(c.get("cmap", "viridis"))}
         sv = v.astype(str).where(v.notna(), "–")
         cats = list(dict.fromkeys(sv))
+        if c.get("_hue_cats"):              # same category -> same colour in every panel
+            cats = list(c["_hue_cats"]) + [k for k in cats if k not in c["_hue_cats"]]
         cols = _colors(c.get("huepalette") or c.get("palette", "okabe-ito"), len(cats))
         return {"col": c["hue"], "continuous": False, "values": sv, "cats": cats,
                 "colors": dict(zip(cats, cols))}
@@ -563,6 +567,9 @@ class Mapping:
         return H
 
     def colorbar(self, fig, ax):
+        if self.hue and self.hue["continuous"] and self.c.get("_sharedkey"):
+            ax._sp_cbar = self          # drawn once for the whole figure
+            return None
         if self.hue and self.hue["continuous"]:
             sm = matplotlib.cm.ScalarMappable(norm=self.hue["norm"], cmap=self.hue["cmap"])
             cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05, aspect=25,
@@ -1381,6 +1388,14 @@ def _legend(fig, ax, c, series, extra):
     h, l = [h[k] for k in order], [l[k] for k in order]
     if len(series) == 1 and not c.get("legendsingle") and l and l[0] == names[0]:
         h, l = h[1:], l[1:]      # a lone series doesn't need its own entry
+    if c.get("_sharedkey"):
+        # one key for the whole figure: series, groups and mapped colour/size/shape go there;
+        # entries carrying this panel's own numbers (fits, "mean = …") stay on the panel
+        ax._sp_keys = [(hh, ll) for hh, ll in zip(h, l) if "=" not in ll] + list(extra)
+        keep = [k for k, ll in enumerate(l) if "=" in ll]
+        h, l, extra = [h[k] for k in keep], [l[k] for k in keep], []
+        if leg in ("below", "outside"):
+            leg = "best"
     h += [e[0] for e in extra]
     l += [e[1] for e in extra]
     if c.get("_multi") and leg in ("below", "outside") or (c.get("_multi") and leg == "best" and (extra or ax.name == "polar")):
@@ -1758,6 +1773,106 @@ def _panel_frame(sheet):
     return df
 
 
+def _common_hue(panels):
+    """Panels colouring by the same column share one colour scale: the same range for a
+    numeric column and the same colour for each category."""
+    out = [dict(p) for p in panels]
+    bycol = {}
+    for i, pc in enumerate(out):
+        if _ok(pc.get("hue")):
+            bycol.setdefault((pc["hue"], bool(pc.get("huecat")), bool(pc.get("huelog"))), []).append(i)
+    for (col, cat, log), idx in bycol.items():
+        if len(idx) < 2:
+            continue
+        vals = []
+        for i in idx:
+            d = _panel_frame(out[i].get("sheet"))
+            if col in d.columns:
+                vals.append(d[col])
+        if not vals:
+            continue
+        v = pd.concat(vals, ignore_index=True)
+        if pd.api.types.is_numeric_dtype(v) and not cat:
+            vv = v.astype(float)
+            vv = vv[np.isfinite(vv) & ((vv > 0) if log else True)]
+            if len(vv):
+                for i in idx:
+                    out[i]["_hue_lo"], out[i]["_hue_hi"] = float(vv.min()), float(vv.max())
+        else:
+            cats = list(dict.fromkeys(v.astype(str).where(v.notna(), "–")))
+            for i in idx:
+                out[i]["_hue_cats"] = cats
+    return out
+
+
+def _shared_key(fig, axes, mode, base):
+    """One legend and one colour bar per mapped variable for the whole figure."""
+    seen, H, L = set(), [], []
+    head = ""
+    for ax in axes:
+        head, gi = "", 0
+        for h, l in getattr(ax, "_sp_keys", []):
+            if isinstance(h, Rectangle):          # a group title (colour by …, size by …, shape by …)
+                head, gi = l, gi + 1
+            key = (gi, head, l)
+            if key in seen:
+                continue
+            seen.add(key)
+            H.append(h)
+            L.append(l)
+    # titles that ended up with no entries under them (all duplicates) are dropped
+    keep = []
+    for k, (h, l) in enumerate(zip(H, L)):
+        if isinstance(h, Rectangle) and (k + 1 == len(H) or isinstance(H[k + 1], Rectangle)):
+            continue
+        keep.append(k)
+    H, L = [H[k] for k in keep], [L[k] for k in keep]
+    cbars = {}
+    for ax in axes:
+        m = getattr(ax, "_sp_cbar", None)
+        if m is not None:
+            lab = m.c.get("huelabel") or m.hue["col"]
+            cbars.setdefault(lab, m)
+    loc = "right" if mode == "right" else "bottom"
+    for lab, m in cbars.items():
+        sm = matplotlib.cm.ScalarMappable(norm=m.hue["norm"], cmap=m.hue["cmap"])
+        cb = fig.colorbar(sm, ax=axes, location=loc, pad=0.02, fraction=0.04, aspect=35,
+                          shrink=0.8)
+        cb.set_label(lab)
+        if isinstance(m.hue["norm"], matplotlib.colors.LogNorm):
+            cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        cb.outline.set_linewidth(0.6)
+    if not H:
+        return
+    if mode == "right":
+        Lg = fig.legend(H, L, loc="outside right upper")
+    else:
+        # one column per group (colour / size / shape), wrapped at 4 rows
+        groups, cur = [], []
+        for h, l in zip(H, L):
+            if isinstance(h, Rectangle) and cur:
+                groups.append(cur)
+                cur = []
+            cur.append((h, l))
+        groups.append(cur)
+        wrapped = []
+        for g in groups:
+            wrapped += [g[i:i + 4] for i in range(0, len(g), 4)]
+        rows = max(len(g) for g in wrapped)
+        blank = (Rectangle((0, 0), 0, 0, fill=False, edgecolor="none", visible=False), "")
+        hh, ll = [], []
+        for g in wrapped:
+            g = g + [blank] * (rows - len(g))
+            hh += [e[0] for e in g]
+            ll += [e[1] for e in g]
+        Lg = fig.legend(hh, ll, loc="outside lower center", ncols=len(wrapped),
+                        columnspacing=1.0, handletextpad=0.3)
+        H, L = hh, ll
+    for txt, h in zip(Lg.get_texts(), H):
+        if isinstance(h, Rectangle) and txt.get_text():
+            txt.set_fontweight("bold")
+
+
 def render_layout(payload_json, fmt="png", dpi=200, meta=""):
     """Several panels in a grid. payload = {layout, panels: [cfg...], active, excluded}."""
     import math
@@ -1782,6 +1897,9 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         rows * (width / cols) * aspect + 0.25
     base = panels[active] if panels else {}
     cells, results = [], []
+    legmode = L.get("legend", "each")
+    shared = legmode in ("right", "below")
+    panels = _common_hue(panels)
     with plt.rc_context(_style(base)):
         fig = plt.figure(figsize=(width, height), layout="constrained")
         sp = _num(L.get("spacing"))
@@ -1794,7 +1912,7 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         ex = P.get("excluded", [])
         if isinstance(ex, dict):
             ex = ex.get(sheet or "", [])
-        pc = {**pc, "_multi": True, "excluded": ex}
+        pc = {**pc, "_multi": True, "excluded": ex, "_sharedkey": shared}
         n0 = len(groups)
         with plt.rc_context(_style(pc)):
             ax = fig.add_subplot(gs[r, col], projection="polar" if pc.get("kind") == "polar" else None)
@@ -1811,6 +1929,9 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
         results.append({"msgs": msgs, "points": pts if i == active else []})
 
     # ---- figure-wide options
+    if shared:
+        with plt.rc_context(_style(base)):
+            _shared_key(fig, [cl[0] for cl in cells], legmode, base)
     if L.get("sharex", "none") != "none":
         _share_limits(cells, "x", L["sharex"])
     if L.get("sharey", "none") != "none":

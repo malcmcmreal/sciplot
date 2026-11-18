@@ -40,7 +40,7 @@ Live: https://malcmcmreal.github.io/sciplot/
 
 ## Multi-panel figures
 
-Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
+Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel starts empty (no columns chosen) but keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
 
 Each panel can plot a different sheet of the workbook: activate the panel, then pick its sheet. Header settings, combined sheets and calculated columns are shared by all panels, and excluded points are remembered per sheet. Overall controls are under **Figure layout**:
 
@@ -50,6 +50,7 @@ Each panel can plot a different sheet of the workbook: activate the panel, then 
 - shared X/Y limits, per row, column or across all panels (panels are only linked when they plot the same variable)
 - hiding inner tick labels or titles
 - mirroring axes to the right/top
+- one shared legend / colour key for the whole figure (right or below) instead of one per panel; panels colouring by the same column always share one colour scale
 - automatic panel letters, e.g. (a) / a / A, outside or inside each panel
 
 Each panel can also hide its own X axis, Y axis or both (Axes section). Exports, saved plots and `.sciplot` projects store the whole figure. The group-summary CSV gains a `panel` column.
