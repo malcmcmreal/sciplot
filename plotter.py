@@ -713,6 +713,7 @@ def _polar_setup(ax, df, c, series):
             ax.set_thetamin(0)
             ax.set_thetamax(span)
     ax._sp_amin, ax._sp_amax, ax._sp_scale, ax._sp_span = amin, amax, scale, span
+    ax._sp_pending, ax._sp_final = [], False
     ax.grid(True, color="0.85", linewidth=0.5)
     ax.set_axisbelow(True)
 
@@ -739,6 +740,12 @@ def _polar_finish(ax, c, df, series, xl, yl):
         ax.set_rscale("log")
     else:
         ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(5))
+    r0, r1 = ax.get_ylim()
+    ax._sp_final = True
+    for fn, a, kw in ax._sp_pending:          # reference rays / bands, now that the limits are known
+        fn(*a, **kw)
+    ax._sp_pending = []
+    ax.set_ylim(r0, r1)
     ax.set_ylabel(yl, labelpad=6)
     ax.set_xlabel("")
     if xl:
@@ -764,24 +771,43 @@ def _polar_ref(ax, axis):
     """Reference-line drawers for polar axes: Y values -> arcs, X values -> rays."""
     amin, amax, tx = ax._sp_amin, ax._sp_amax, ax._sp_tx
     phis = np.linspace(tx(amin), tx(amax), 200)
+    # Rays and bands depend on the final radius limits, so until the axes are finished
+    # (limits set) they are queued and drawn by _polar_finish.
+    def later(fn):
+        def run(*a, **kw):
+            if getattr(ax, "_sp_final", False):
+                fn(*a, **kw)
+            else:
+                ax._sp_pending.append((fn, a, kw))
+        return run
+
+    def lims():
+        r0, r1 = ax.get_ylim()
+        return min(r0, r1), max(r0, r1)
+
     if axis == "y":
         def line(v, **kw):
-            ax.plot(phis, np.full_like(phis, v), **kw)
+            r0, r1 = lims()
+            if r0 <= v <= r1:
+                ax.plot(phis, np.full_like(phis, v), **kw)
 
         def span(a, b, **kw):
-            ax.fill_between(phis, a, b, **kw)
+            r0, r1 = lims()
+            a, b = max(a, r0), min(b, r1)
+            if b > a:
+                ax.fill_between(phis, a, b, **kw)
     else:
         def line(v, **kw):
-            r0, r1 = ax.get_ylim()
-            ax.plot([tx(v), tx(v)], [r0, r1], **kw)
-            ax.set_ylim(r0, r1)
+            r0, r1 = lims()
+            if amin <= v <= amax:
+                ax.plot([tx(v), tx(v)], [r0, r1], **kw)
 
         def span(a, b, **kw):
-            r0, r1 = ax.get_ylim()
-            pp = np.linspace(tx(max(a, amin)), tx(min(b, amax)), 100)
-            ax.fill_between(pp, r0, r1, **kw)
-            ax.set_ylim(r0, r1)
-    return line, span
+            r0, r1 = lims()
+            a, b = max(a, amin), min(b, amax)
+            if b > a:
+                ax.fill_between(np.linspace(tx(a), tx(b), 100), r0, r1, **kw)
+    return later(line), later(span)
 
 
 # ----------------------------------------------------------------- vectors
@@ -975,12 +1001,17 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
             xerr = xerr.iloc[order] if xerr is not None else None
 
         px = x_plot_all[x.index] if polar else x
+        yd = y                                           # what gets drawn
+        if polar and (_num(c.get("ymin")) is not None or _num(c.get("ymax")) is not None):
+            rlo = _num(c.get("ymin")) if _num(c.get("ymin")) is not None else -np.inf
+            rhi = _num(c.get("ymax")) if _num(c.get("ymax")) is not None else np.inf
+            yd = y.where((y >= rlo) & (y <= rhi))        # outside the radius range: not drawn
         vec = c.get("vector") and kind in ("scatter", "polar") and x_numeric and main
         if vec:
             if yerr is not None or xerr is not None:
-                ax.errorbar(px, y, yerr=yerr, xerr=xerr, fmt="none", ecolor="0.6",
+                ax.errorbar(px, yd, yerr=yerr, xerr=xerr, fmt="none", ecolor="0.6",
                             elinewidth=0.6, alpha=alpha, zorder=1.5)
-            lcol, ltop = _vectors(ax, px, y, x.index, df, c, mapping, col, alpha)
+            lcol, ltop = _vectors(ax, px, yd, x.index, df, c, mapping, col, alpha)
             ax.plot([], [], color="0.3" if (mapping is not None and mapping.hue) else col,
                     linewidth=_num(c.get("vecwidth")) or 1.2, label=lbl)
             if lcol and i == 0:
@@ -989,10 +1020,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
         elif mapped and main:
             neutral = "0.55" if mapping.hue else col
             if yerr is not None or xerr is not None:
-                ax.errorbar(px, y, yerr=yerr, xerr=xerr, fmt="none", ecolor=neutral,
+                ax.errorbar(px, yd, yerr=yerr, xerr=xerr, fmt="none", ecolor=neutral,
                             elinewidth=0.7, alpha=alpha, zorder=1.5)
             if kind == "linemarkers":
-                ax.plot(px, y, color=neutral, linestyle=ls, zorder=1.6, alpha=alpha)
+                ax.plot(px, yd, color=neutral, linestyle=ls, zorder=1.6, alpha=alpha)
             fc = mapping.colors_for(x.index, col)
             sz = mapping.sizes_for(x.index, ms)
             groups = ([(m, (mapping.style["values"].loc[x.index] == k).values)
@@ -1003,10 +1034,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
                     continue
                 gfc = [fc[j] for j in np.flatnonzero(g)]
                 if open_m:
-                    ax.scatter(px[g], y[g], s=sz[g] ** 2, marker=m, facecolors="white",
+                    ax.scatter(px[g], yd[g], s=sz[g] ** 2, marker=m, facecolors="white",
                                edgecolors=gfc, linewidths=0.9, alpha=alpha, zorder=2)
                 else:
-                    ax.scatter(px[g], y[g], s=sz[g] ** 2, marker=m, c=gfc,
+                    ax.scatter(px[g], yd[g], s=sz[g] ** 2, marker=m, c=gfc,
                                edgecolors=c.get("edgecolor", "black") if c.get("edgecolor", "black") != "none" else "face",
                                linewidths=0.4, alpha=alpha, zorder=2)
             # series key (shape + series colour, or grey when colour is mapped)
@@ -1026,10 +1057,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
             else:
                 fmt = dict(linestyle=ls, marker="none")
             if yerr is not None or xerr is not None:
-                ax.errorbar(px, y, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha_s,
+                ax.errorbar(px, yd, yerr=yerr, xerr=xerr, color=col, ecolor=col, alpha=alpha_s,
                             elinewidth=0.7, label=lbl, zorder=2 if main else 4, **fmt)
             else:
-                ax.plot(px, y, color=col, label=lbl, zorder=2 if main else 4, alpha=alpha_s, **fmt)
+                ax.plot(px, yd, color=col, label=lbl, zorder=2 if main else 4, alpha=alpha_s, **fmt)
 
         # polynomial fit (+ optional seaborn confidence band)
         fit = int(s.get("fit") or 0)
