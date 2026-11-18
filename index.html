@@ -257,7 +257,12 @@
           <label class="check" id="huerobustRow" title="A few extreme values can squash everything else into one colour. This sets the colour range to the 2nd–98th percentile; values beyond it get the end colours (arrows on the colour bar)."><input type="checkbox" id="huerobust" data-cfg> Ignore extreme values (2–98 %)</label>
           <div class="row"><label for="huelabel">Colour bar label</label><input type="text" id="huelabel" data-cfg placeholder="column name"></div>
           <div class="row" id="cbarSizeRow"><label title="Length as % of the panel's height, thickness as % of its width. Blank: automatic.">Colour bar size</label><input type="number" id="cbarlen" data-cfg min="5" max="100" step="5" placeholder="length %"><input type="number" id="cbarwid" data-cfg min="0.5" max="30" step="0.5" placeholder="thick %"></div>
-          <div class="row"><label for="cbarpos">Colour bar position</label><select id="cbarpos" data-cfg><option value="right">Right</option><option value="left">Left</option><option value="top">Top</option><option value="bottom">Bottom</option></select></div>
+          <div class="row"><label for="cbarpos">Colour bar position</label><select id="cbarpos" data-cfg>
+            <optgroup label="Outside the plot"><option value="right">Right</option><option value="left">Left</option><option value="top">Top</option><option value="bottom">Bottom</option></optgroup>
+            <optgroup label="Inside the plot"><option value="in-ur">Inside, upper right</option><option value="in-ul">Inside, upper left</option><option value="in-lr">Inside, lower right</option><option value="in-ll">Inside, lower left</option><option value="in-top">Inside, along the top</option><option value="in-bottom">Inside, along the bottom</option></optgroup>
+          </select></div>
+          <div class="row"><label title="Which side of the bar its tick labels and title go. Left/right apply to upright bars, top/bottom to horizontal ones.">Bar ticks · title side</label><select id="cbartickside" data-cfg><option value="">auto</option><option value="left">left</option><option value="right">right</option><option value="top">top</option><option value="bottom">bottom</option></select><select id="cbarlabelside" data-cfg><option value="">auto</option><option value="left">left</option><option value="right">right</option><option value="top">top</option><option value="bottom">bottom</option></select></div>
+          <label class="check"><input type="checkbox" id="cbarbox" data-cfg> White box behind an inside colour bar</label>
           <div class="row"><label for="cbarticks">Colour bar ticks</label><select id="cbarticks" data-cfg><option value="shown">Marks + labels</option><option value="labels">Labels only</option><option value="none">Hidden</option></select></div>
           <div class="row"><label for="cbarnticks" title="Roughly how many labelled ticks (blank: automatic)">Number · direction</label><input type="number" id="cbarnticks" data-cfg min="2" max="15" step="1" placeholder="auto"><select id="cbartickdir" data-cfg><option value="">auto</option><option value="out">out</option><option value="in">in</option><option value="inout">across</option></select></div>
           <label class="check"><input type="checkbox" id="cbarminor" data-cfg> Colour bar minor ticks</label>
@@ -344,7 +349,7 @@
         <p class="hint" id="layoutHint">One panel. Use <b>+ Duplicate</b> or <b>+ Blank</b> above the plot to add panels; these settings then apply to the whole figure.</p>
         <h3 class="subhead">Grid &amp; size</h3>
         <div class="row"><label for="lay-cols">Columns</label>
-          <select id="lay-cols" data-lay><option value="">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+          <input type="number" id="lay-cols" data-lay min="1" max="30" step="1" placeholder="auto" title="Number of grid columns (blank: automatic)"></div>
         <div class="row"><label for="lay-size">Figure width</label>
           <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
         <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
@@ -692,6 +697,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=35"></script>
+  <script type="module" src="app.js?v=36"></script>
 </body>
 </html>

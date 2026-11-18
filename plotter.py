@@ -639,34 +639,78 @@ class Mapping:
 
 
 def _colorbar(fig, ax, sm, c, extend="neither"):
-    """A colour bar beside one panel. Position, length, thickness and ticks come from the
-    Colour section; with a length / thickness set it is sized relative to the panel's own
-    plot area, so it follows a panel with a fixed aspect."""
+    """A colour bar beside or inside one panel. Position, length, thickness, sides and ticks
+    come from the Colour section; with a length / thickness set (and always inside the plot) it
+    is sized relative to the panel's own plot area, so it follows a panel with a fixed aspect."""
     ln, th = _num(c.get("cbarlen")), _num(c.get("cbarwid"))
     pos = c.get("cbarpos") or "right"
     polar = ax.name == "polar"
-    horiz = pos in ("top", "bottom")
-    if ln or th:
-        ln = min(max((ln or (70 if polar else 100)) / 100, 0.05), 1.0)
-        th = min(max((th or 4) / 100, 0.005), 0.5)
-        g = 0.14 if polar else 0.03
+    inside = pos.startswith("in-")
+    horiz = pos in ("top", "bottom", "in-top", "in-bottom")
+    if ln or th or inside:
+        ln = min(max((ln or (40 if inside else 70 if polar else 100)) / 100, 0.05), 1.0)
+        th = min(max((th or (3.5 if inside else 4)) / 100, 0.005), 0.5)
+        g, m = (0.14 if polar else 0.03), 0.05      # gap outside / margin inside
         box = {"right": [1.0 + g, (1 - ln) / 2, th, ln],
                "left": [-0.24 - th, (1 - ln) / 2, th, ln],           # clear of the Y tick labels/title
                "top": [(1 - ln) / 2, 1.0 + g, ln, th],
-               "bottom": [(1 - ln) / 2, -0.30 - th, ln, th]}[pos]   # clear of the X tick labels/title
+               "bottom": [(1 - ln) / 2, -0.30 - th, ln, th],        # clear of the X tick labels/title
+               "in-ur": [1 - m - th, 1 - m - ln, th, ln], "in-lr": [1 - m - th, m, th, ln],
+               "in-ul": [m, 1 - m - ln, th, ln], "in-ll": [m, m, th, ln],
+               "in-top": [(1 - ln) / 2, 1 - m - th, ln, th],
+               "in-bottom": [(1 - ln) / 2, m + 0.17, ln, th]}.get(pos, [1.0 + g, (1 - ln) / 2, th, ln])
         cax = ax.inset_axes(box)
+        cax._sp_parent = ax
         cb = fig.colorbar(sm, cax=cax, extend=extend, orientation="horizontal" if horiz else "vertical")
-        if pos == "top":
-            cax.xaxis.set_ticks_position("top")
-            cax.xaxis.set_label_position("top")
-        elif pos == "left":
-            cax.yaxis.set_ticks_position("left")
-            cax.yaxis.set_label_position("left")
+        side = {"top": "top", "left": "left", "in-ur": "left", "in-lr": "left", "in-top": "bottom",
+                "in-bottom": "bottom"}.get(pos)        # inside: labels face into the plot
+        if side:
+            _cbar_sides(cb, side, side)
+        if inside and c.get("cbarbox"):
+            cax.set_zorder(6)
+            cb._sp_box = True
     else:
         cb = fig.colorbar(sm, ax=ax, location=pos, pad=0.02 if not horiz else 0.04,
                           fraction=0.05, aspect=25, shrink=0.7 if polar else 1.0, extend=extend)
     _style_cbar(cb, c)
     return cb
+
+
+def _cbar_boxes(fig):
+    """White boxes behind inside colour bars, sized to the bar plus its ticks and title. Kept in
+    the parent panel's own coordinates so later layout changes move them with the panel."""
+    cbs = getattr(fig, "_sp_boxes", [])
+    if not cbs:
+        return
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    for cb in cbs:
+        parent = getattr(cb.ax, "_sp_parent", None)
+        if parent is None:
+            continue
+        old = getattr(cb, "_sp_patch", None)
+        if old is not None:
+            old.remove()
+        bb = cb.ax.get_tightbbox(r).transformed(parent.transAxes.inverted())
+        pad = 0.015
+        cb._sp_patch = parent.add_patch(matplotlib.patches.FancyBboxPatch(
+            (bb.x0 - pad, bb.y0 - pad), bb.width + 2 * pad, bb.height + 2 * pad,
+            boxstyle="round,pad=0,rounding_size=0.01", transform=parent.transAxes, clip_on=False,
+            facecolor="white", edgecolor="0.8", linewidth=0.5, alpha=0.92, zorder=5.9))
+
+
+def _cbar_sides(cb, ticks=None, label=None):
+    """Put a colour bar's tick labels and its title on the chosen sides."""
+    if cb.orientation == "horizontal":
+        if ticks in ("top", "bottom"):
+            cb.ax.xaxis.set_ticks_position(ticks)
+        if label in ("top", "bottom"):
+            cb.ax.xaxis.set_label_position(label)
+    else:
+        if ticks in ("left", "right"):
+            cb.ax.yaxis.set_ticks_position(ticks)
+        if label in ("left", "right"):
+            cb.ax.yaxis.set_label_position(label)
 
 
 def _style_cbar(cb, c):
@@ -685,6 +729,9 @@ def _style_cbar(cb, c):
         cb.ax.tick_params(which="both", direction=c["cbartickdir"])
     if c.get("cbarminor"):
         cb.minorticks_on()
+    _cbar_sides(cb, c.get("cbartickside") or None, c.get("cbarlabelside") or None)
+    if getattr(cb, "_sp_box", False):
+        cb.ax.figure._sp_boxes = getattr(cb.ax.figure, "_sp_boxes", []) + [cb]
     cb._sp_styled = True
 
 
@@ -1841,6 +1888,7 @@ def render(cfg_json, fmt="png", dpi=200, meta=""):
     with plt.rc_context(_style(c)):
         geom = _geometry(fig, fig.axes[0], points) if fmt == "png" else None
         md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        _cbar_boxes(fig)
         fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
     for pp in points:
         pp.pop("phi", None)
@@ -2250,6 +2298,7 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
                 g = _geometry(fig, ax, results[i]["points"] if i == active else [], draw=False)
                 geoms.append(g)
         md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        _cbar_boxes(fig)
         fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
     plt.close(fig)
     for res in results:
@@ -2480,6 +2529,7 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
                                 f"90th percentile {int(np.percentile(settles, 90))}")
         buf = io.BytesIO()
         md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        _cbar_boxes(fig)
         fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
     plt.close(fig)
     return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
