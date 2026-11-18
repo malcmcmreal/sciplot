@@ -247,3 +247,11 @@ details.sec > summary + h3.subhead, details.sec > h3.subhead:first-of-type { bor
 .ref-row .r-fxbox { margin: 0.2rem 0 0.4rem; }
 .ref-row .r-fx { width: 100%; font-family: var(--mono); font-size: 0.78rem; }
 .ref-row .fx-hint { color: var(--muted); font-size: 0.68rem; margin-top: 0.2rem; line-height: 1.3; }
+
+/* panels */
+.panelbar { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.55rem; padding-bottom: 0.55rem; border-bottom: 1px solid var(--line); }
+.panelbar .pb-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.panelbar .chips { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.panelbar .chip { background: var(--raised); border: 1px solid var(--line); color: var(--muted); padding: 0.2rem 0.6rem; font-size: 0.8rem; border-radius: 6px; }
+.panelbar .chip.on { color: var(--ink); background: var(--accent); border-color: #8e8e93; box-shadow: inset 0 -2px 0 var(--link); }
+.editing { font-size: 0.8rem; color: var(--ink); background: var(--accent-soft); border-left: 3px solid var(--link); border-radius: 6px; padding: 0.4rem 0.6rem; margin-bottom: 0.6rem; }

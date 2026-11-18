@@ -1377,6 +1377,17 @@ def _legend(fig, ax, c, series, extra):
         h, l = h[1:], l[1:]      # a lone series doesn't need its own entry
     h += [e[0] for e in extra]
     l += [e[1] for e in extra]
+    if c.get("_multi") and leg in ("below", "outside") or (c.get("_multi") and leg == "best" and (extra or ax.name == "polar")):
+        if not h:
+            return
+        if leg == "outside":
+            L = ax.legend(h, l, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0)
+        else:
+            L = ax.legend(h, l, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncols=min(len(h), 2))
+        for txt, lab in zip(L.get_texts(), l):
+            if any(lab == e[1] and isinstance(e[0], Rectangle) for e in extra):
+                txt.set_fontweight("bold")
+        return
     if leg == "best" and (extra or ax.name == "polar"):
         leg = "below"            # keys too big for the data area; sector plots have no free corner
     if leg != "off" and h and leg == "below":
@@ -1436,6 +1447,9 @@ def _legend(fig, ax, c, series, extra):
                 fs = fs if isinstance(fs, (int, float)) else c.get("fontsize", 9) - 1
                 for width, size in ((60, fs), (48, fs), (40, fs - 1), (34, fs - 2)):
                     lw = ["\n".join(textwrap.wrap(t, width)) or t for t in l]
+                    if c.get("_multi"):
+                        L = ax.legend(h, lw, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncols=1, fontsize=size)
+                        break
                     L = fig.legend(h, lw, loc="outside lower center", ncols=1, fontsize=size)
                     fig.canvas.draw()
                     if L.get_window_extent().width <= fig.bbox.width * 0.98:
@@ -1462,133 +1476,162 @@ def _series_df(s, df):
     return DATA.get("tables", {}).get(src, pd.DataFrame()) if src else df
 
 
-def make_figure(c, df=None):
-    df = DATA["df"] if df is None else df
-    if df is None:
-        raise ValueError("No data loaded.")
-    msgs, points, extra = [], [], []
-    groups = DATA.setdefault("groups", [])
-    groups.clear()
+def _panel_series(c, df, msgs):
     series = [s for s in c.get("series", []) if s.get("y") in _series_df(s, df).columns]
     kind = c.get("kind", "scatter")
     if any(s.get("source") for s in series) and kind not in ("scatter", "linemarkers", "line", "step", "polar"):
         msgs.append("Series from other sheets are drawn in x–y and polar plots only")
         series = [s for s in series if not s.get("source")] or series[:0]
+    return series
+
+
+def _hide_axes(ax, c):
+    """Per-panel axis hiding (useful in multi-panel figures)."""
+    if c.get("hideaxes"):
+        ax.set_axis_off()
+        return
+    if c.get("hidex"):
+        ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False, labeltop=False)
+        ax.set_xlabel("")
+    if c.get("hidey"):
+        ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False, labelright=False)
+        ax.set_ylabel("")
+
+
+def draw_panel(fig, ax, c, df, groups):
+    """Draw one plot (all of a panel's settings) into existing axes. Returns (msgs, points)."""
+    msgs, points, extra = [], [], []
+    series = _panel_series(c, df, msgs)
     kind = c.get("kind", "scatter")
+    polar = kind == "polar"
+    if polar:
+        _polar_setup(ax, df, c, series)
+    if not series:
+        ax.text(0.5, 0.5, "Choose a Y column to plot", ha="center", va="center",
+                transform=ax.transAxes, color="0.5")
+        _hide_axes(ax, c)
+        return msgs, points
+
+    pal = _colors(c.get("palette", "okabe-ito"), len(series))
+    colors = [s.get("color") or pal[i] for i, s in enumerate(series)]
+    xcol = c.get("x") if c.get("x") in df.columns else None
+
+    if kind == "bar":
+        _bar(ax, df, c, series, colors, xcol)
+    elif kind == "hist":
+        _hist(ax, fig, df, c, series, colors, msgs)
+    elif kind in ("kde", "box", "violin", "strip", "swarm"):
+        _distribution(ax, df, c, series, colors, xcol, msgs)
+    else:
+        _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups)
+    if polar:
+        xl = c.get("xlabel") or (xcol or "Index")
+        yl = c.get("ylabel") or (series[0]["y"] if len(series) == 1 else "")
+        _polar_finish(ax, c, df, series, xl, yl)
+        if any(c.get(k) for k in ("hlines", "vlines")):
+            _custom_lines(ax, c, kind)
+        if c.get("title"):
+            ax.set_title(c["title"])
+        _legend(fig, ax, c, series, extra)
+        if c.get("panel") and not c.get("_multi"):
+            ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
+                    fontweight="bold", fontsize=c.get("fontsize", 9) + 2)
+        _hide_axes(ax, c)
+        return msgs, points
+
+    # ---- labels
+    xl, yl = c.get("xlabel"), c.get("ylabel")
+    dist_grouped = kind in ("box", "violin", "strip", "swarm") and xcol \
+        and not pd.api.types.is_numeric_dtype(df[xcol]) and len(series) == 1
+    if not xl:
+        if kind in ("hist", "kde"):
+            xl = series[0]["y"] if len(series) == 1 else ""
+        elif kind in ("box", "violin", "strip", "swarm"):
+            xl = xcol if dist_grouped else ""
+        else:
+            xl = xcol or "Index"
+    if not yl:
+        if kind == "hist":
+            yl = "Density" if c.get("density") else "Count"
+        elif kind == "kde":
+            yl = "Density"
+        else:
+            yl = series[0]["y"] if len(series) == 1 else ""
+    ax.set_xlabel(xl)
+    ax.set_ylabel(yl)
+    if c.get("title"):
+        ax.set_title(c["title"])
+
+    # ---- scales and limits
+    if c.get("xlog") and kind not in CATEGORICAL:
+        ax.set_xscale("log")
+    if c.get("ylog"):
+        ax.set_yscale("log")
+    lo, hi = _num(c.get("xmin")), _num(c.get("xmax"))
+    if (lo is not None or hi is not None) and kind not in CATEGORICAL:
+        ax.set_xlim(left=lo, right=hi)
+    lo, hi = _num(c.get("ymin")), _num(c.get("ymax"))
+    if lo is not None or hi is not None:
+        ax.set_ylim(bottom=lo, top=hi)
+    _custom_lines(ax, c, kind)
+    if c.get("xinvert"):
+        ax.invert_xaxis()
+    if c.get("yinvert"):
+        ax.invert_yaxis()
+    if c.get("minor", True):
+        if kind not in CATEGORICAL and ax.get_xscale() == "linear":
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+        if ax.get_yscale() == "linear":
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+    grid = c.get("grid", "none")
+    if grid != "none":
+        ax.grid(True, which="major", color="0.85", linewidth=0.5, zorder=0)
+        if grid == "both":
+            ax.grid(True, which="minor", color="0.93", linewidth=0.4, zorder=0)
+        ax.set_axisbelow(True)
+
+    # ---- legend
+    _legend(fig, ax, c, series, extra)
+
+    if kind in CATEGORICAL:
+        ax.tick_params(axis="x", which="both", top=False, bottom=kind == "bar")
+        if kind != "bar" and c.get("xrot"):
+            plt.setp(ax.get_xticklabels(), rotation=c["xrot"], ha="right")
+    if c.get("despine"):
+        if sns is not None:
+            sns.despine(ax=ax)
+        else:
+            ax.spines[["top", "right"]].set_visible(False)
+        ax.tick_params(which="both", top=False, right=False)
+
+    if c.get("panel") and not c.get("_multi"):
+        ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
+                fontweight="bold", fontsize=c.get("fontsize", 9) + 2)
+    _hide_axes(ax, c)
+    return msgs, points
+
+
+def make_figure(c, df=None):
+    df = DATA["df"] if df is None else df
+    if df is None:
+        raise ValueError("No data loaded.")
+    groups = DATA.setdefault("groups", [])
+    groups.clear()
     size = FIG_SIZES.get(c.get("size", "single"), None)
     if size is None:
         size = (_num(c.get("width")) or 3.5, _num(c.get("height")) or 2.6)
-
     with plt.rc_context(_style(c)):
-        polar = kind == "polar"
-        if polar:
-            fig = plt.figure(figsize=size, layout="constrained")
-            ax = fig.add_subplot(projection="polar")
-            _polar_setup(ax, df, c, series)
-        else:
-            fig, ax = plt.subplots(figsize=size, layout="constrained")
-        if not series:
-            ax.text(0.5, 0.5, "Choose a Y column to plot", ha="center", va="center",
-                    transform=ax.transAxes, color="0.5")
-            return fig, msgs, points
-
-        pal = _colors(c.get("palette", "okabe-ito"), len(series))
-        colors = [s.get("color") or pal[i] for i, s in enumerate(series)]
-        xcol = c.get("x") if c.get("x") in df.columns else None
-
-        if kind == "bar":
-            _bar(ax, df, c, series, colors, xcol)
-        elif kind == "hist":
-            _hist(ax, fig, df, c, series, colors, msgs)
-        elif kind in ("kde", "box", "violin", "strip", "swarm"):
-            _distribution(ax, df, c, series, colors, xcol, msgs)
-        else:
-            _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups)
-        if polar:
-            xl = c.get("xlabel") or (xcol or "Index")
-            yl = c.get("ylabel") or (series[0]["y"] if len(series) == 1 else "")
-            _polar_finish(ax, c, df, series, xl, yl)
-            if any(c.get(k) for k in ("hlines", "vlines")):
-                _custom_lines(ax, c, kind)
-            if c.get("title"):
-                ax.set_title(c["title"])
-            return _finish_legend(fig, ax, c, series, extra, kind, msgs, points)
-
-        # ---- labels
-        xl, yl = c.get("xlabel"), c.get("ylabel")
-        dist_grouped = kind in ("box", "violin", "strip", "swarm") and xcol \
-            and not pd.api.types.is_numeric_dtype(df[xcol]) and len(series) == 1
-        if not xl:
-            if kind in ("hist", "kde"):
-                xl = series[0]["y"] if len(series) == 1 else ""
-            elif kind in ("box", "violin", "strip", "swarm"):
-                xl = xcol if dist_grouped else ""
-            else:
-                xl = xcol or "Index"
-        if not yl:
-            if kind == "hist":
-                yl = "Density" if c.get("density") else "Count"
-            elif kind == "kde":
-                yl = "Density"
-            else:
-                yl = series[0]["y"] if len(series) == 1 else ""
-        ax.set_xlabel(xl)
-        ax.set_ylabel(yl)
-        if c.get("title"):
-            ax.set_title(c["title"])
-
-        # ---- scales and limits
-        if c.get("xlog") and kind not in CATEGORICAL:
-            ax.set_xscale("log")
-        if c.get("ylog"):
-            ax.set_yscale("log")
-        lo, hi = _num(c.get("xmin")), _num(c.get("xmax"))
-        if (lo is not None or hi is not None) and kind not in CATEGORICAL:
-            ax.set_xlim(left=lo, right=hi)
-        lo, hi = _num(c.get("ymin")), _num(c.get("ymax"))
-        if lo is not None or hi is not None:
-            ax.set_ylim(bottom=lo, top=hi)
-        _custom_lines(ax, c, kind)
-        if c.get("xinvert"):
-            ax.invert_xaxis()
-        if c.get("yinvert"):
-            ax.invert_yaxis()
-        if c.get("minor", True):
-            if kind not in CATEGORICAL and ax.get_xscale() == "linear":
-                ax.xaxis.set_minor_locator(AutoMinorLocator())
-            if ax.get_yscale() == "linear":
-                ax.yaxis.set_minor_locator(AutoMinorLocator())
-        grid = c.get("grid", "none")
-        if grid != "none":
-            ax.grid(True, which="major", color="0.85", linewidth=0.5, zorder=0)
-            if grid == "both":
-                ax.grid(True, which="minor", color="0.93", linewidth=0.4, zorder=0)
-            ax.set_axisbelow(True)
-
-        # ---- legend
-        _legend(fig, ax, c, series, extra)
-
-        if kind in CATEGORICAL:
-            ax.tick_params(axis="x", which="both", top=False, bottom=kind == "bar")
-            if kind != "bar" and c.get("xrot"):
-                plt.setp(ax.get_xticklabels(), rotation=c["xrot"], ha="right")
-        if c.get("despine"):
-            if sns is not None:
-                sns.despine(ax=ax)
-            else:
-                ax.spines[["top", "right"]].set_visible(False)
-            ax.tick_params(which="both", top=False, right=False)
-
-        if c.get("panel"):
-            ax.text(-0.02, 1.02, c["panel"], transform=ax.transAxes, ha="right", va="bottom",
-                    fontweight="bold", fontsize=c.get("fontsize", 9) + 2)
+        fig = plt.figure(figsize=size, layout="constrained")
+        ax = fig.add_subplot(projection="polar" if c.get("kind") == "polar" else None)
+        msgs, points = draw_panel(fig, ax, c, df, groups)
     return fig, msgs, points
 
 
-def _geometry(fig, ax, points=None):
+def _geometry(fig, ax, points=None, draw=True):
     """Axes position (fractions of the figure, origin top-left) and data limits.
     For polar axes, each point's pixel position is attached instead (key "px")."""
-    fig.canvas.draw()
+    if draw:
+        fig.canvas.draw()
     p = ax.get_position()
     if ax.name == "polar":
         W, H = fig.bbox.width, fig.bbox.height
@@ -1639,7 +1682,171 @@ def group_table_csv():
         return ""
     cols = ["series", "groupby", "group", "x", "n", "statistic", "centre", "spread", "lo", "hi",
             "mean", "median", "sd", "se", "q1", "q3", "min", "max"]
-    return pd.DataFrame(rows)[cols].to_csv(index=False, float_format="%.6g")
+    d = pd.DataFrame(rows)
+    if "panel" in d:
+        cols = ["panel"] + cols
+    return d.reindex(columns=cols).to_csv(index=False, float_format="%.6g")
+
+
+# ------------------------------------------------------------ multi-panel figures
+LAYOUT_WIDTHS = {"single": 3.5, "onehalf": 5.5, "double": 7.2, "screen": 10.0}
+
+
+def _panel_label(i, style):
+    a, A = chr(97 + i % 26), chr(65 + i % 26)
+    return {"(a)": f"({a})", "a": a, "a)": f"{a})", "A": A, "(A)": f"({A})", "A)": f"{A})",
+            "a.": f"{a}.", "none": ""}.get(style, f"({a})")
+
+
+def _share_limits(cells, which, group):
+    """Give panels in the same group (all / row / column) a common X or Y range."""
+    groups = {}
+    for ax, pc, r, col in cells:
+        if ax.name == "polar" or pc.get("kind") in CATEGORICAL or (which == "x" and pc.get("kind") in ("bar",)):
+            continue
+        key = "all" if group == "all" else (col if group == "col" else r)
+        # only panels showing the same variable on that axis are linked
+        if which == "x":
+            var = (pc.get("series") or [{}])[0].get("y") if pc.get("kind") in ("hist", "kde") else pc.get("x")
+        else:
+            var = "count" if pc.get("kind") == "hist" else ("density" if pc.get("kind") == "kde"
+                                                             else (pc.get("series") or [{}])[0].get("y"))
+        groups.setdefault((key, var), []).append(ax)
+    for axs in groups.values():
+        if len(axs) < 2:
+            continue
+        get = (lambda a: a.get_xlim()) if which == "x" else (lambda a: a.get_ylim())
+        lims = [get(a) for a in axs]
+        flipped = [l[0] > l[1] for l in lims]
+        lo = min(min(l) for l in lims)
+        hi = max(max(l) for l in lims)
+        for a, f in zip(axs, flipped):
+            (a.set_xlim if which == "x" else a.set_ylim)((hi, lo) if f else (lo, hi))
+
+
+def render_layout(payload_json, fmt="png", dpi=200, meta=""):
+    """Several panels in a grid. payload = {layout, panels: [cfg...], active, excluded}."""
+    import math
+    P = json.loads(payload_json)
+    L = P.get("layout", {})
+    panels = P.get("panels") or []
+    active = int(P.get("active") or 0)
+    df = DATA["df"]
+    if df is None:
+        raise ValueError("No data loaded.")
+    groups = DATA.setdefault("groups", [])
+    groups.clear()
+    n = max(len(panels), 1)
+    cols = int(_num(L.get("cols")) or math.ceil(math.sqrt(n)))
+    cols = max(1, min(cols, n))
+    rows = math.ceil(n / cols)
+    width = LAYOUT_WIDTHS.get(L.get("size", "double")) or _num(L.get("width")) or 7.2
+    if L.get("size") == "custom":
+        width = _num(L.get("width")) or 7.2
+    aspect = _num(L.get("aspect")) or 0.75
+    height = _num(L.get("height")) if L.get("size") == "custom" and _num(L.get("height")) else \
+        rows * (width / cols) * aspect + 0.25
+    base = panels[active] if panels else {}
+    cells, results = [], []
+    with plt.rc_context(_style(base)):
+        fig = plt.figure(figsize=(width, height), layout="constrained")
+        sp = _num(L.get("spacing"))
+        sp = 0.02 if sp is None else sp
+        fig.get_layout_engine().set(wspace=sp, hspace=sp, w_pad=0.03, h_pad=0.03)
+        gs = fig.add_gridspec(rows, cols)
+    for i, pc in enumerate(panels):
+        r, col = divmod(i, cols)
+        pc = {**pc, "_multi": True, "excluded": P.get("excluded", [])}
+        n0 = len(groups)
+        with plt.rc_context(_style(pc)):
+            ax = fig.add_subplot(gs[r, col], projection="polar" if pc.get("kind") == "polar" else None)
+            try:
+                msgs, pts = draw_panel(fig, ax, pc, df, groups)
+            except Exception as e:
+                ax.clear()
+                ax.text(0.5, 0.5, f"Panel {_panel_label(i, '(a)')}: {e}", ha="center", va="center",
+                        transform=ax.transAxes, color="#c8372d", wrap=True, fontsize=7)
+                msgs, pts = [f"error: {e}"], []
+        for g in groups[n0:]:
+            g["panel"] = _panel_label(i, "a")
+        cells.append((ax, pc, r, col))
+        results.append({"msgs": msgs, "points": pts if i == active else []})
+
+    # ---- figure-wide options
+    if L.get("sharex", "none") != "none":
+        _share_limits(cells, "x", L["sharex"])
+    if L.get("sharey", "none") != "none":
+        _share_limits(cells, "y", L["sharey"])
+    occupied = {(r, col) for _, _, r, col in cells}
+    inner = L.get("inner", "keep")
+    for ax, pc, r, col in cells:
+        if ax.name == "polar":
+            continue
+        below = (r + 1, col) in occupied
+        left_of = col > 0
+        last_in_row = (r, col + 1) not in occupied
+        my_ = L.get("mirrory", "none")
+        mirrored = (my_ == "right" and last_in_row and col > 0) or my_ == "all"
+        if inner in ("titles", "all"):
+            if below:
+                ax.set_xlabel("")
+            if left_of and not (mirrored and last_in_row):
+                ax.set_ylabel("")
+        if inner == "all":
+            if below:
+                ax.tick_params(axis="x", which="both", labelbottom=False)
+            if left_of:
+                ax.tick_params(axis="y", which="both", labelleft=False)
+        last_in_row = (r, col + 1) not in occupied
+        my = L.get("mirrory", "none")
+        if (my == "right" and last_in_row and col > 0) or my == "all":
+            # Y axis (tick labels + title) on the right-hand side of this panel
+            ax.yaxis.set_label_position("right")
+            show = not (inner == "all" and my == "all" and not last_in_row)
+            ax.tick_params(axis="y", which="both", labelleft=False, labelright=show)
+            if not show:
+                ax.set_ylabel("")
+        mx = L.get("mirrorx", "none")
+        if (mx == "top" and r == 0 and rows > 1) or mx == "all":
+            ax.xaxis.set_label_position("top")
+            ax.tick_params(axis="x", which="both", labelbottom=False, labeltop=True)
+    style = L.get("labels", "(a)")
+    for i, (ax, pc, r, col) in enumerate(cells):
+        text = pc.get("panel") or _panel_label(i, style)
+        if not text:
+            continue
+        fs = (pc.get("fontsize", 9) or 9) + 2
+        if L.get("labelpos", "outside") == "inside":
+            ax.text(0.03, 0.97, text, transform=ax.transAxes, ha="left", va="top", fontweight="bold", fontsize=fs,
+                    zorder=10, bbox=dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=0.8))
+        else:
+            xy = (-0.10, 1.06) if ax.name == "polar" else (-0.02, 1.02)
+            ax.text(*xy, text, transform=ax.transAxes, ha="right", va="bottom", fontweight="bold", fontsize=fs)
+
+    buf = io.BytesIO()
+    with plt.rc_context(_style(base)):
+        geoms = []
+        if fmt == "png":
+            fig.canvas.draw()
+            for i, (ax, pc, r, col) in enumerate(cells):
+                g = _geometry(fig, ax, results[i]["points"] if i == active else [], draw=False)
+                geoms.append(g)
+        md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
+    plt.close(fig)
+    for res in results:
+        for pp in res["points"]:
+            pp.pop("phi", None)
+    act = panels[active] if panels else {}
+    pal = _colors(act.get("palette", "okabe-ito"), len(act.get("series", [])))
+    return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"),
+                   "msgs": results[active]["msgs"] if results else [],
+                   "geom": geoms[active] if geoms else None, "geoms": geoms,
+                   "points": results[active]["points"] if results else [],
+                   "rows": rows, "cols": cols, "active": active,
+                   "colors": [s.get("color") or pal[k] for k, s in enumerate(act.get("series", []))],
+                   "swatches": _colors(act.get("palette", "okabe-ito"), 8),
+                   "ngroups": len(groups)})
 
 
 # ------------------------------------------------------------ subsampling (running mean / 2σ)

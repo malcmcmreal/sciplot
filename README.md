@@ -38,6 +38,22 @@ Live: https://malcmcmreal.github.io/sciplot/
   - **Save style / Apply style** keep settings only, for reusing a look on other data; **Copy link** puts the settings in the URL.
   - Everything stays on your computer – nothing is uploaded.
 
+## Multi-panel figures
+
+Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
+
+Data settings (file, header row, combined sheets, calculated columns, excluded points) are shared by all panels. Overall controls are under **Figure layout**:
+
+- columns
+- figure size: journal single, 1.5 or double column, or custom
+- panel aspect and spacing
+- shared X/Y limits, per row, column or across all panels (panels are only linked when they plot the same variable)
+- hiding inner tick labels or titles
+- mirroring axes to the right/top
+- automatic panel letters, e.g. (a) / a / A, outside or inside each panel
+
+Each panel can also hide its own X axis, Y axis or both (Axes section). Exports, saved plots and `.sciplot` projects store the whole figure. The group-summary CSV gains a `panel` column.
+
 ## Subsampling tab
 
 A second tab for "how many measurements do I need?" figures. Values are drawn in a random order (without replacement) and the plot shows the **running mean** or **running 2σ** (2 × sample SD) of the first *n* as measurements are added:

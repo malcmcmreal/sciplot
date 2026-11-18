@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 15;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 16;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -583,6 +583,15 @@ function updateBadges() {
   set('axes', a.join(' · '));
   set('style', [$('size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, ''), $('palette').selectedOptions[0]?.textContent,
     $('theme').value !== 'publication' ? $('theme').selectedOptions[0]?.textContent : ''].filter(Boolean).join(' · '));
+  {
+    const cols = $('lay-cols').value;
+    const lb = [];
+    if (multi()) lb.push(`${figure.panels.length} panels${cols ? `, ${cols} col` : ''}`);
+    if ($('lay-sharex').value !== 'none') lb.push('shared X');
+    if ($('lay-sharey').value !== 'none') lb.push('shared Y');
+    if ($('lay-inner').value !== 'keep') lb.push('inner labels hidden');
+    set('layout', lb.join(' · '));
+  }
   const n = document.querySelectorAll('.saved-item').length;
   set('saved', n ? `${n} saved` : '');
 }
@@ -594,6 +603,10 @@ function updateVisibility() {
   const mappable = k === 'scatter' || k === 'linemarkers' || polar;
   $('polarRows').hidden = !polar;
   $('refcustom').hidden = $('refcolor').value !== 'custom';
+  const mp = multi();
+  $('size').closest('.row').hidden = mp;
+  $('customSize').hidden = mp || $('size').value !== 'custom';
+  $('sizeMultiHint').hidden = !mp;
   document.querySelectorAll('.ref-row .r-axis').forEach((el) => { el.closest('.row').hidden = k === 'hist'; });
   const xyk = ['scatter', 'linemarkers', 'line', 'step', 'polar'].includes(k);
   $('groupRows').hidden = !xyk;
@@ -763,8 +776,14 @@ function renderPreview() {
   $('err').textContent = '';
   try {
     const cfg = getConfig();
-    const r = pyRender(cfg, 'png', PREVIEW_DPI);
-    last = { geom: r.geom, points: r.points, kind: cfg.kind };
+    let r;
+    if (multi()) {
+      r = pyCall(`plotter.render_layout(_args[0], "png", ${PREVIEW_DPI}, "")`, [JSON.stringify(layoutPayload())]);
+      last = { geom: r.geom, points: r.points, kind: cfg.kind, geoms: r.geoms };
+    } else {
+      r = pyRender(cfg, 'png', PREVIEW_DPI);
+      last = { geom: r.geom, points: r.points, kind: cfg.kind };
+    }
     const img = $('fig');
     img.onload = () => {
       // show at roughly 1.6× physical size, capped by the panel width
@@ -802,7 +821,9 @@ document.querySelectorAll('[data-exp]').forEach((b) => b.addEventListener('click
   const fmt = b.dataset.exp;
   try {
     const meta = 'SciPlot1:' + b64utf8(JSON.stringify(buildProject({ withData: $('embedData').checked, base64: true }))) + '!';
-    const r = pyRender(getConfig(), fmt, +$('dpi').value, meta);
+    const r = multi()
+      ? pyCall(`plotter.render_layout(_args[0], "${fmt}", ${+$('dpi').value}, _args[1])`, [JSON.stringify(layoutPayload()), meta])
+      : pyRender(getConfig(), fmt, +$('dpi').value, meta);
     const bin = Uint8Array.from(atob(r.data), (ch) => ch.charCodeAt(0));
     const mime = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' }[fmt];
     download(`${baseName()}.${fmt}`, new Blob([bin], { type: mime }));
@@ -921,6 +942,15 @@ function drawOverlay(mouse) {
   ctx.clearRect(0, 0, w, h);
   if (!last?.geom) return;
   const g = last.geom;
+  if (multi() && last.geoms) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(190,81,3,0.9)';
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.5;
+    const p = 6;
+    ctx.strokeRect(g.x0 * w - p, g.y0 * h - p, (g.x1 - g.x0) * w + 2 * p, (g.y1 - g.y0) * h + 2 * p);
+    ctx.restore();
+  }
   if (mouse && inAxes(mouse[0], mouse[1]) && !drag) {
     ctx.strokeStyle = 'rgba(190,81,3,0.45)';
     ctx.setLineDash([3, 3]);
@@ -997,6 +1027,12 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('mousedown', (e) => {
   if (!last?.geom || e.button !== 0) return;
   const [mx, my] = mousePos(e);
+  if (multi() && last.geoms) {
+    const { w, h } = box();
+    const hit = last.geoms.findIndex((g) => g && mx >= (g.x0 - 0.04) * w && mx <= (g.x1 + 0.02) * w
+      && my >= (g.y0 - 0.06) * h && my <= (g.y1 + 0.06) * h);
+    if (hit >= 0 && hit !== figure.active) { activatePanel(hit); return; }
+  }
   if (tool === 'zoom' && inAxes(mx, my)) drag = { x0: mx, y0: my, x1: mx, y1: my, moved: false };
 });
 window.addEventListener('mouseup', (e) => {
@@ -1048,6 +1084,7 @@ function b64utf8(str) { return bytesToB64(new TextEncoder().encode(str)); }
 
 function buildProject({ withData = true, base64 = false } = {}) {
   const p = { sciplot: 1, saved: new Date().toISOString(), cfg: getConfig() };
+  if (multi()) { syncActive(); p.figure = { layout: layoutCfg(), panels: figure.panels, active: figure.active }; }
   if (curFile) {
     p.file = { name: curFile.name, sheet: curFile.sheet ?? null };
     if (withData) p.file[base64 ? 'b64' : 'bytes'] = base64 ? bytesToB64(curFile.bytes) : curFile.bytes;
@@ -1058,7 +1095,14 @@ function buildProject({ withData = true, base64 = false } = {}) {
 function restoreProject(p, how = 'Opened') {
   if (!p || !p.cfg) throw new Error('Not a SciPlot project');
   info = null;                                   // columns come from the project's data
+  if (p.figure?.panels?.length) {
+    figure = { panels: p.figure.panels, active: p.figure.active || 0 };
+    applyLayout(p.figure.layout || {});
+  } else {
+    figure = { panels: [null], active: 0 };
+  }
   applyConfig(p.cfg);
+  renderPanelBar();
   excluded = new Set(p.cfg.excluded || []);
   $('headerRows').hidden = $('header').value !== 'row';
   updateVisibility();
@@ -1197,6 +1241,8 @@ async function startFresh() {
   try { await DB.del('__last__'); } catch {}
   try { localStorage.removeItem(LS_KEY); } catch {}
   curFile = null; info = null; last = null; excluded.clear(); keepSetup = false;
+  figure = { panels: [null], active: 0 };
+  renderPanelBar();
   applyConfig({ ...DEFAULTS, series: [], calc: [] });
   $('fname').textContent = ''; $('saveName').value = '';
   $('stage').classList.remove('show'); $('placeholder').hidden = false;
@@ -1389,6 +1435,113 @@ $('ssCsv').addEventListener('click', () => {
     const csv = py.runPython('plotter.subsample_csv(_args[0])');
     download(`${baseName()}_running_${$('ss-mode').value}.csv`, new Blob([csv], { type: 'text/csv' }));
   } catch (e) { $('ssErr').textContent = String(e); }
+});
+
+// ---------------------------------------------------------------- panels (multi-panel figures)
+// Each panel keeps its own complete settings; the sidebar edits the active one. Data-level
+// settings (file, header, combined sheets, calculated columns, excluded rows) are shared.
+const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'sheet', 'excluded', 'ss', 'view'];
+const STYLE_KEYS = ['font', 'fontsize', 'theme', 'despine', 'ticks', 'palette', 'markerfill', 'varymarkers',
+  'markersize', 'linewidth', 'capsize', 'legendframe', 'minor', 'alpha'];
+var figure = { panels: [null], active: 0 };   // var + function: usable before this point
+function multi() { return !!figure && figure.panels.length > 1; }
+
+function panelCfg() {
+  const c = getConfig({ withExcluded: false });
+  DATA_KEYS.forEach((k) => delete c[k]);
+  return c;
+}
+function syncActive() { figure.panels[figure.active] = panelCfg(); }
+function layoutCfg() {
+  const o = {};
+  document.querySelectorAll('[data-lay]').forEach((el) => { o[el.id.slice(4)] = el.value; });
+  return o;
+}
+function applyLayout(o) {
+  document.querySelectorAll('[data-lay]').forEach((el) => { const k = el.id.slice(4); if (k in o) el.value = o[k]; });
+  $('layCustomRow').hidden = $('lay-size').value !== 'custom';
+}
+function layoutPayload() {
+  syncActive();
+  return { layout: layoutCfg(), panels: figure.panels, active: figure.active, excluded: [...excluded] };
+}
+function panelLetter(i) {
+  const st = $('lay-labels').value;
+  const a = String.fromCharCode(97 + (i % 26)), A = a.toUpperCase();
+  return ({ '(a)': `(${a})`, a, 'a)': `${a})`, 'a.': `${a}.`, A, '(A)': `(${A})`, 'A)': `${A})` })[st] || `(${a})`;
+}
+function renderPanelBar() {
+  const n = figure.panels.length;
+  $('panelChips').innerHTML = figure.panels.map((p, i) =>
+    `<button type="button" class="chip ${i === figure.active ? 'on' : ''}" data-i="${i}" title="Edit panel ${panelLetter(i)}">${panelLetter(i)}</button>`).join('');
+  ['panelLeft', 'panelRight', 'panelRemove'].forEach((id) => { $(id).hidden = n < 2; });
+  $('panelLeft').disabled = figure.active === 0;
+  $('panelRight').disabled = figure.active === n - 1;
+  $('editingNote').hidden = n < 2;
+  $('editingLabel').textContent = panelLetter(figure.active);
+  $('layoutHint').hidden = n > 1;
+  updateVisibility();
+}
+function activatePanel(i) {
+  if (i === figure.active || i < 0 || i >= figure.panels.length) return;
+  syncActive();
+  figure.active = i;
+  applyConfig(figure.panels[i]);
+  renderPanelBar();
+  scheduleRender(0);
+}
+function addPanel(duplicate) {
+  if (!info) return;
+  syncActive();
+  const cur = figure.panels[figure.active];
+  let p;
+  if (duplicate) {
+    p = JSON.parse(JSON.stringify(cur));
+  } else {
+    p = JSON.parse(JSON.stringify(DEFAULTS));
+    DATA_KEYS.forEach((k) => delete p[k]);
+    STYLE_KEYS.forEach((k) => { if (k in cur) p[k] = cur[k]; });   // keep the figure's look
+    p.series = [];
+    p.refextra = [];
+  }
+  p.panel = '';
+  figure.panels.splice(figure.active + 1, 0, p);
+  figure.active += 1;
+  applyConfig(p);
+  renderPanelBar();
+  scheduleRender(0);
+}
+function removePanel() {
+  if (!multi()) return;
+  figure.panels.splice(figure.active, 1);
+  figure.active = Math.min(figure.active, figure.panels.length - 1);
+  applyConfig(figure.panels[figure.active]);
+  renderPanelBar();
+  scheduleRender(0);
+}
+function movePanel(d) {
+  const i = figure.active, k = i + d;
+  if (k < 0 || k >= figure.panels.length) return;
+  syncActive();
+  [figure.panels[i], figure.panels[k]] = [figure.panels[k], figure.panels[i]];
+  figure.active = k;
+  renderPanelBar();
+  scheduleRender(0);
+}
+window.sciplotState = () => ({ last, figure });   // read-only peek for debugging/tests
+$('panelChips').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (b) activatePanel(+b.dataset.i); });
+$('panelDup').addEventListener('click', () => addPanel(true));
+$('panelBlank').addEventListener('click', () => addPanel(false));
+$('panelRemove').addEventListener('click', removePanel);
+$('panelLeft').addEventListener('click', () => movePanel(-1));
+$('panelRight').addEventListener('click', () => movePanel(1));
+document.querySelectorAll('[data-lay]').forEach((el) => {
+  el.addEventListener(el.type === 'number' || el.type === 'text' ? 'input' : 'change', () => {
+    $('layCustomRow').hidden = $('lay-size').value !== 'custom';
+    if (el.id === 'lay-labels') renderPanelBar();
+    updateBadges();
+    scheduleRender(200);
+  });
 });
 
 // ---------------------------------------------------------------- sections: remember open / closed
