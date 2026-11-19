@@ -890,11 +890,27 @@ $('cfgFile').addEventListener('change', async (e) => {
   try { applyConfig(JSON.parse(await f.text())); scheduleRender(0); } catch (err) { showError(err); }
   e.target.value = '';
 });
+// Reset settings: every plot, figure-layout and Subsampling setting back to its default (one
+// panel again). The loaded data and its calculated columns stay; "New plot" clears those too.
+let resetArmed = null;
 $('reset').addEventListener('click', () => {
+  const b = $('reset');
+  if (!resetArmed) {                      // ask once: this throws away panels and styling
+    b.textContent = 'Click again to reset everything';
+    resetArmed = setTimeout(() => { resetArmed = null; b.textContent = 'Reset settings'; }, 3500);
+    return;
+  }
+  clearTimeout(resetArmed); resetArmed = null;
   try { localStorage.removeItem(LS_KEY); } catch {}
   history.replaceState(null, '', location.href.split('#')[0]);
-  excluded.clear();
-  applyConfig({ ...DEFAULTS, series: [] });
+  excluded.clear(); exclBySheet = {};
+  figure = { panels: [null], active: 0 };
+  applyLayout(LAY_DEFAULTS);
+  ssTouched = new Set();
+  applyConfig({ ...DEFAULTS, ss: { ...DEFAULTS.ss }, series: [], calc: getCalc() });
+  renderPanelBar();
+  updateBadges();
+  flash(b, 'Settings reset');
   scheduleRender(0);
 });
 function flash(btn, text) {
@@ -1401,6 +1417,8 @@ async function startFresh() {
   try { localStorage.removeItem(LS_KEY); } catch {}
   curFile = null; info = null; last = null; excluded.clear(); exclBySheet = {}; keepSetup = false;
   figure = { panels: [null], active: 0 };
+  applyLayout(LAY_DEFAULTS);
+  ssTouched = new Set();
   renderPanelBar();
   applyConfig({ ...DEFAULTS, series: [], calc: [] });
   $('fname').textContent = ''; $('saveName').value = '';
@@ -1767,6 +1785,7 @@ const SEC_KEY = 'sciplot-sections';
 
 // ---------------------------------------------------------------- start-up
 DEFAULTS = getConfig({ withExcluded: false });
+var LAY_DEFAULTS = layoutCfg();
 delete DEFAULTS.series;
 delete DEFAULTS.x;
 ['source', 'value', 'anglecol', 'dparcol', 'wherecol', 'whereval'].forEach((k) => delete DEFAULTS.ss[k]);
