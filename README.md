@@ -40,7 +40,18 @@ Live: https://malcmcmreal.github.io/sciplot/
 
 ## Where things are
 
-The sidebar has three tool sets: **Data & files** (load data, export, saved plots and projects), **Plot & stats** (plot type, series, colour/size/shape, mean and reference lines, fits, group summaries) and **Layout & style** (figure layout for multi-panel figures, axes, fonts and colours). It opens on Plot & stats once data is loaded and remembers the last one you used. The tabs stay anchored at the top while you scroll. Less-used settings sit in small fold-out menus (e.g. *Colour range & colour bar*, *More fit options*, *Fine spacing*). **Export → File name** sets the name of downloaded figures (blank: the data file's name).
+Settings are grouped by the part of the figure they change, the way GraphPad Prism, Origin and Plotly organise theirs. There are six tabs:
+
+| Tab | What's in it |
+|---|---|
+| **Data** | load a file, sheets and header rows · export (file name, PDF/SVG/PNG) · saved plots and projects |
+| **Plot** | plot type, X and series (Y, error bars, per-series style) · type options (bins, KDE, polar, violin) · markers, size by, shape by, vectors |
+| **Stats** | mean / median / SD / formula lines · fixed lines · fits · group summaries |
+| **Axes** | title, panel label, axis titles and their size/position · ranges, log, invert, ticks, grid, despine, hide axes |
+| **Colour** | palette · colour by a column · colour map, range and colour bar · legend, including one shared key for multi-panel figures |
+| **Figure** | figure size, theme, font · panels: grid, spacing, shared axes, panel letters, this panel's size |
+
+The sidebar opens on Plot once data is loaded and remembers the last tab. The tabs stay anchored at the top while you scroll. Less-used settings sit in small fold-out menus. Calculated columns have their own panel under the figure.
 
 ## Titles and axis titles
 
@@ -62,7 +73,7 @@ The **Calculated columns** panel sits under the figure, above the data table. Ea
 
 Use **+ Duplicate** or **+ Blank** above the figure to add panels. Duplicating copies the active panel's full setup so you only change what differs; a blank panel starts empty (no columns chosen) but keeps the figure's fonts, theme and palette. Click a chip, e.g. **(b)**, or click directly on a panel to make it active. The sidebar then edits only that panel, and a dashed outline marks it. The **←/→** buttons reorder panels and **Remove** deletes the active one.
 
-Each panel can plot a different sheet of the workbook: activate the panel, then pick its sheet. Header settings, combined sheets and calculated columns are shared by all panels, and excluded points are remembered per sheet. Overall controls are under **Layout & style → Figure layout**:
+Each panel can plot a different sheet of the workbook: activate the panel, then pick its sheet. Header settings, combined sheets and calculated columns are shared by all panels, and excluded points are remembered per sheet. Overall controls are under **Figure → Panels**:
 
 - columns
 - figure size: journal single, 1.5 or double column, or custom
@@ -75,7 +86,7 @@ Each panel can plot a different sheet of the workbook: activate the panel, then 
 - one shared legend / colour key for the whole figure (right or below) instead of one per panel; panels colouring by the same column always share one colour scale
 - automatic panel letters, e.g. (a) / a / A, outside or inside each panel
 
-Each panel can also hide its own X axis, Y axis or both, and set its own size (Axes section → *This panel's size*): how many columns and rows it spans (e.g. one wide panel across the top) and a fixed height ÷ width. **Column widths** and **Row heights** under Figure layout take relative values such as `2, 1`. Exports, saved plots and `.sciplot` projects store the whole figure. The group-summary CSV gains a `panel` column.
+Each panel can also hide its own X axis, Y axis or both, and set its own size (Figure → Panels → *This panel's size*): how many columns and rows it spans (e.g. one wide panel across the top) and a fixed height ÷ width. **Column widths** and **Row heights** under Figure layout take relative values such as `2, 1`. Exports, saved plots and `.sciplot` projects store the whole figure. The group-summary CSV gains a `panel` column.
 
 ## Subsampling tab
 

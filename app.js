@@ -107,7 +107,7 @@ async function loadData(sheet = null) {
     const firstLoad = !$('x').options.length;
     $('expname').placeholder = dataName();
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
-    if (firstLoad && toolTab() === 'file') setToolTab('plot');   // data in: on to plotting
+    if (firstLoad && toolTab() === 'data') setToolTab('plot');   // data in: on to plotting
     try { fillSS(); } catch (e) { console.warn("Subsampling menus:", e); }   // never block the main plot
     if (currentView === 'ss') ssSchedule(0);
     showRaw();
@@ -704,8 +704,13 @@ function updateBadges() {
   if ($('sizeby').value) m.push('size: ' + $('sizeby').value);
   if ($('styleby').value) m.push('shape: ' + $('styleby').value);
   if ($('vector').checked) m.push('vectors');
-  if (k === 'hist' && $('histcolor').value) m.push('bins by ' + $('histcolor').value);
-  set('map', m.join(' · '));
+  set('map', m.filter((x) => !x.startsWith('colour')).join(' · '));
+  const col = [$('palette').selectedOptions[0]?.textContent];
+  if ($('hue').value) col.push('by ' + $('hue').value);
+  if (k === 'hist' && $('histcolor').value) col.push('bins by ' + $('histcolor').value);
+  set('colour', col.filter(Boolean).join(' · '));
+  set('legend', [$('legend').selectedOptions[0]?.textContent.replace(/ \(.*\)/, ''), multi() && $('lay-legend').value !== 'each' ? 'shared key' : ''].filter(Boolean).join(' · '));
+  set('titles', [$('title').value && 'title', ($('xlabel').value || $('ylabel').value) && 'custom labels', $('panel').value && 'panel ' + $('panel').value].filter(Boolean).join(' · '));
   const s = [];
   const st = ['refmean', 'refmedian', 'refwmean'].filter((id) => $(id).checked).map((id) => ({ refmean: 'mean', refmedian: 'median', refwmean: 'wtd mean' })[id]);
   if (st.length) s.push(st.join('/'));
@@ -719,10 +724,10 @@ function updateBadges() {
   if ($('xlog').checked || $('ylog').checked) a.push('log ' + [$('xlog').checked && 'X', $('ylog').checked && 'Y'].filter(Boolean).join('+'));
   if (['xmin', 'xmax', 'ymin', 'ymax'].some((id) => $(id).value !== '')) a.push('ranges set');
   if ($('xinvert').checked || $('yinvert').checked) a.push('inverted');
-  if ($('title').value) a.push('title');
   if ($('grid').value !== 'none') a.push('grid');
   set('axes', a.join(' · '));
-  set('style', [$('size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, ''), $('palette').selectedOptions[0]?.textContent,
+  set('figure', [(multi() ? $('lay-size') : $('size')).selectedOptions[0]?.textContent.replace(/ \(.*\)/, ''),
+    $('font').selectedOptions[0]?.textContent.replace(/ \(.*\)/, '') + ' ' + $('fontsize').value + ' pt',
     $('theme').value !== 'publication' ? $('theme').selectedOptions[0]?.textContent : ''].filter(Boolean).join(' · '));
   {
     const cols = $('lay-cols').value;
@@ -748,9 +753,11 @@ function updateVisibility() {
   $('kdeLineRows').hidden = !(($('kind').value === 'hist' && $('histkde').checked) || $('kind').value === 'kde');
   $('kdecustom').hidden = $('kdecolor').value !== 'custom';
   const mp = multi();
-  $('size').closest('.row').hidden = mp;
+  $('size').closest('.row').hidden = mp;              // one panel: Figure size; several: the grid's size
   $('customSize').hidden = mp || $('size').value !== 'custom';
-  $('sizeMultiHint').hidden = !mp;
+  $('laySizeRow').hidden = !mp;
+  $('legendMultiRows').hidden = !mp;
+  $('layCustomRow').hidden = !mp || $('lay-size').value !== 'custom';
   $('panelSizeRows').hidden = !mp;
   document.querySelectorAll('.ref-row .r-axis').forEach((el) => { el.closest('.row').hidden = k === 'hist'; });
   const xyk = ['scatter', 'linemarkers', 'line', 'step', 'polar'].includes(k);
@@ -767,8 +774,9 @@ function updateVisibility() {
   $('histcolorHint').hidden = !hc;
   $('kdeRows').hidden = k !== 'kde';
   $('bwRow').hidden = !(k === 'kde' || (hist && $('histkde').checked));
-  $('sec-map').hidden = !(mappable || hc);
+  $('sec-map').hidden = !mappable;
   $('mapRows').hidden = !mappable;
+  $('hueRows').hidden = !mappable;
   const hueCol = $('hue').value, hueIdx = info ? info.columns.indexOf(hueCol) : -1;
   const hueNumeric = hueIdx >= 0 && info.numeric[hueIdx];
   $('huecatRow').hidden = !(mappable && hueNumeric);
@@ -802,7 +810,7 @@ function updateVisibility() {
   const blank = $('x').querySelector('option[value=""]');
   if (blank) blank.textContent = grouped ? '(series)' : '(row number)';
   $('ticksRow').hidden = $('theme').value !== 'publication';
-  $('customSize').hidden = $('size').value !== 'custom';
+  $('customSize').hidden = multi() || $('size').value !== 'custom';
   document.querySelectorAll('.series .s-err').forEach((el, i) => { el.hidden = dist || (bar && i % 2 === 1); });
   document.querySelectorAll('.series .s-fitrow').forEach((el) => { el.hidden = dist || bar; });
 }
@@ -811,7 +819,8 @@ function updateVisibility() {
 function getConfig({ withExcluded = true } = {}) {
   const c = {};
   for (const el of cfgEls()) {
-    c[el.id] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value;
+    // an empty number box stays empty ("automatic"), not 0
+    c[el.id] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? '' : +el.value) : el.value;
   }
   c.series = getSeries();
   c.header = $('header').value;
@@ -1640,7 +1649,7 @@ function layoutCfg() {
 }
 function applyLayout(o) {
   document.querySelectorAll('[data-lay]').forEach((el) => { const k = el.id.slice(4); if (k in o) el.value = o[k]; });
-  $('layCustomRow').hidden = $('lay-size').value !== 'custom';
+  $('layCustomRow').hidden = !multi() || $('lay-size').value !== 'custom';
 }
 function layoutPayload() {
   syncActive();
@@ -1738,7 +1747,7 @@ $('panelLeft').addEventListener('click', () => movePanel(-1));
 $('panelRight').addEventListener('click', () => movePanel(1));
 document.querySelectorAll('[data-lay]').forEach((el) => {
   el.addEventListener(el.type === 'number' || el.type === 'text' ? 'input' : 'change', () => {
-    $('layCustomRow').hidden = $('lay-size').value !== 'custom';
+    $('layCustomRow').hidden = !multi() || $('lay-size').value !== 'custom';
     if (el.id === 'lay-labels') renderPanelBar();
     updateBadges();
     scheduleRender(200);
@@ -1747,7 +1756,7 @@ document.querySelectorAll('[data-lay]').forEach((el) => {
 
 // ---------------------------------------------------------------- tool tabs (sidebar)
 const TT_KEY = 'sciplot-tooltab';
-function toolTab() { return document.querySelector('.tooltabs button.on')?.dataset.tt || 'file'; }
+function toolTab() { return document.querySelector('.tooltabs button.on')?.dataset.tt || 'data'; }
 function setToolTab(t) {
   document.querySelectorAll('.tooltabs button').forEach((b) => {
     b.classList.toggle('on', b.dataset.tt === t);
@@ -1761,9 +1770,10 @@ document.querySelector('.tooltabs').addEventListener('click', (e) => {
   if (b) setToolTab(b.dataset.tt);
 });
 {
-  let t = 'file';
-  try { t = localStorage.getItem(TT_KEY) || 'file'; } catch (e) { /* storage unavailable */ }
-  setToolTab(['file', 'plot', 'layout'].includes(t) ? t : 'file');
+  let t = 'data';
+  try { t = localStorage.getItem(TT_KEY) || 'data'; } catch (e) { /* storage unavailable */ }
+  t = { file: 'data', layout: 'figure' }[t] || t;          // names used before the regrouping
+  setToolTab(['data', 'plot', 'stats', 'axes', 'colour', 'figure'].includes(t) ? t : 'data');
 }
 
 // ---------------------------------------------------------------- sections: remember open / closed

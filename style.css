@@ -315,3 +315,4 @@ details.sub[open] > summary { margin-bottom: 0.35rem; }
 .calc-help .chips button.num { border-left: 2px solid var(--link); }
 #dataTable th.calc { color: var(--link); }
 @media (max-width: 900px) { .calc-cols { display: none; } .calc-row { grid-template-columns: 1fr 1fr auto; } .calc-row .c-res { grid-column: 1 / -1; } }
+.tooltabs button { font-size: 0.74rem; padding: 0.42rem 0.1rem; letter-spacing: 0.01em; }

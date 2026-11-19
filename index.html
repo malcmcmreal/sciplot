@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=24">
+  <link rel="stylesheet" href="style.css?v=25">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -28,15 +28,18 @@
     <div class="toolcol">
       <div class="toolhead">
         <nav class="tooltabs" role="tablist" aria-label="Tool sets">
-          <button type="button" role="tab" data-tt="file">Data &amp; files</button>
-          <button type="button" role="tab" data-tt="plot">Plot &amp; stats</button>
-          <button type="button" role="tab" data-tt="layout">Layout &amp; style</button>
+          <button type="button" role="tab" data-tt="data" title="Load data, export, saved plots">Data</button>
+          <button type="button" role="tab" data-tt="plot" title="Plot type, series, type options, markers, size &amp; shape">Plot</button>
+          <button type="button" role="tab" data-tt="stats" title="Mean/median/SD lines, fixed lines, fits, group summaries">Stats</button>
+          <button type="button" role="tab" data-tt="axes" title="Titles, axis labels, ranges, log scales, ticks">Axes</button>
+          <button type="button" role="tab" data-tt="colour" title="Colours, colour by a column, colour map &amp; bar, legend">Colour</button>
+          <button type="button" role="tab" data-tt="figure" title="Figure size, font, theme, multi-panel layout">Figure</button>
         </nav>
       </div>
     <aside class="controls">
       <div class="editing" id="editingNote" hidden>Editing panel <b id="editingLabel">(a)</b> · click another panel on the figure to edit it</div>
-      <div class="ttpane" data-tt="file">
-      <details class="sec" id="sec-data" open>
+      <div class="ttpane" data-tt="data">
+<details class="sec" id="sec-data" open>
         <summary>Data <span class="badge" id="b-data"></span></summary>
         
         <div id="drop" class="drop" tabindex="0" role="button">
@@ -76,7 +79,7 @@
                     
       </details>
 
-            <details class="sec" id="sec-export" open>
+      <details class="sec" id="sec-export" open>
         <summary>Export <span class="badge" id="b-export"></span></summary>
         <div class="row"><label for="expname" title="Name for exported figures and downloads (without extension). Blank: the data file's name.">File name</label><input type="text" id="expname" data-cfg placeholder="figure" spellcheck="false"></div>
         <div class="row-inline">
@@ -88,11 +91,10 @@
           <button type="button" id="dlGroups" class="ghost" hidden>Group summary (CSV)</button>
           <button type="button" id="dlScript" class="ghost" disabled title="plotter.py plus a settings file that rebuilds this figure in Python">Download Python + settings</button>
         </div>
-        <p class="hint">PDF embeds TrueType fonts; SVG keeps text editable in Illustrator or Inkscape. The figure is exactly the size chosen under Layout &amp; style.</p>
+        <p class="hint">PDF embeds TrueType fonts; SVG keeps text editable in Illustrator or Inkscape. The figure is exactly the size chosen under Figure.</p>
         <p class="hint">Exported figures remember their setup: drop one back onto SciPlot to keep editing it.</p>
         <label class="check"><input type="checkbox" id="embedData"> Also store the data inside exported figures (bigger files; don't use for figures you send to journals if the data are private)</label>
       </details>
-
       <details class="sec" id="sec-saved" open>
         <summary>Saved plots &amp; settings <span class="badge" id="b-saved"></span></summary>
         
@@ -145,7 +147,8 @@
         <div id="seriesList"></div>
         <button type="button" id="addSeries" class="ghost small">+ Add series</button>
       </details>
-<details class="sec" id="sec-type" open>
+
+      <details class="sec" id="sec-type" open>
         <summary><span id="typeTitle">Plot options</span></summary>
         <div id="polarRows" hidden>
           <div class="row"><label for="polstyle">Polar style</label>
@@ -187,7 +190,7 @@
           <div class="row"><label for="histcolor">Colour bins by</label><select id="histcolor" data-cfg data-col></select></div>
           <div class="row" id="histstatRow" hidden><label for="histstat">using the</label>
             <select id="histstat" data-cfg><option value="mean">mean</option><option value="median">median</option><option value="min">minimum</option><option value="max">maximum</option><option value="std">std. deviation</option></select></div>
-          <p class="hint" id="histcolorHint" hidden>Each bar is coloured by that statistic of the chosen column for the rows in the bin. Colour map and range are under <b>Colour, size &amp; shape</b>.</p>
+          <p class="hint" id="histcolorHint" hidden>Each bar is coloured by that statistic of the chosen column for the rows in the bin. Colour map and range are under <b>Colour</b>.</p>
         </div>
         <div id="kdeRows" hidden>
           <label class="check"><input type="checkbox" id="kdefill" data-cfg checked> Fill under curve</label>
@@ -203,73 +206,47 @@
           <select id="violininner" data-cfg><option value="box">Mini box plot</option><option value="quart">Quartile lines</option><option value="stick">Line per value</option><option value="point">Point per value</option></select></div>
         <label class="check" id="distpointsRow" hidden><input type="checkbox" id="distpoints" data-cfg> Overlay individual values</label>
             </details>
-<details class="sec" id="sec-map"><!-- mapSection -->
-        <summary>Colour, size &amp; shape <span class="badge" id="b-map"></span></summary>
+
+      <details class="sec" id="sec-map">
+        <summary>Markers, size &amp; shape <span class="badge" id="b-map"></span></summary>
+        <div class="row"><label for="markerfill">Markers</label>
+          <select id="markerfill" data-cfg><option value="filled">Filled</option><option value="open">Open</option></select></div>
+        <label class="check"><input type="checkbox" id="varymarkers" data-cfg checked> Different marker shape per series</label>
+        <div class="row"><label for="alpha">Opacity</label><input type="number" id="alpha" data-cfg value="1" step="0.05" min="0.05" max="1"></div>
+        <div class="row"><label for="markersize">Marker size</label><input type="number" id="markersize" data-cfg value="4" step="0.5" min="1"></div>
+        <details class="sub" id="subLines">
+          <summary>Line width &amp; error bar caps</summary>
+        <div class="row"><label for="linewidth">Line width</label><input type="number" id="linewidth" data-cfg value="1.2" step="0.1" min="0.2"></div>
+        <div class="row"><label for="capsize">Error bar caps</label><input type="number" id="capsize" data-cfg value="2" step="0.5" min="0"></div>
+        </details>
         <div id="mapRows">
-          <p class="hint">Map columns onto the points (scatter and line + markers).</p>
-          <div class="row"><label for="hue">Colour by</label><select id="hue" data-cfg data-col></select></div>
-          <label class="check" id="huecatRow" hidden><input type="checkbox" id="huecat" data-cfg> Treat numbers as categories</label>
-          <div class="row"><label for="sizeby">Size by</label><select id="sizeby" data-cfg data-col></select></div>
-          <div class="row" id="sizeRangeRow" hidden><label>Size range</label><div class="pair"><input type="text" id="sizemin" data-cfg value="2" title="Smallest marker (pt)"><input type="text" id="sizemax" data-cfg value="9" title="Largest marker (pt)"></div></div>
-          <div class="row"><label for="styleby">Shape by</label><select id="styleby" data-cfg data-col></select></div>
-          <label class="check"><input type="checkbox" id="vector" data-cfg> Draw points as lines (vectors)</label>
-          <div id="vecRows" hidden>
-            <div class="row"><label for="vecdir">Direction from</label><select id="vecdir" data-cfg data-col></select></div>
-            <div class="row"><label for="vecdirconv">Direction is</label>
-              <select id="vecdirconv" data-cfg><option value="up_cw">0° = up, clockwise +</option><option value="right_ccw">0° = horizontal, anticlockwise + (90° = up)</option></select></div>
-            <div class="row"><label for="veclen">Length from</label><select id="veclen" data-cfg data-col></select></div>
-            <details class="sub" id="subVec">
-              <summary>Vector line style</summary>
-            <div class="row"><label for="veclenmax">Longest (pt)</label><input type="number" id="veclenmax" data-cfg value="14" min="1" step="1"></div>
-            <div class="row"><label for="vecwidth">Line width</label><input type="number" id="vecwidth" data-cfg value="1.2" min="0.2" step="0.1"></div>
-            <div class="row"><label for="vecstyle">Line</label>
-              <select id="vecstyle" data-cfg><option value="axial">Centred on the point (axial, e.g. Dpar)</option><option value="arrow">From the point outwards</option></select></div>
-            <label class="check"><input type="checkbox" id="vecdot" data-cfg> Dot at each point</label>
-            </details>
-            <p class="hint">Direction “none” uses the point's angle on a polar plot. Colour comes from <b>Colour by</b>.</p>
-          </div>
-          <div class="row"><label for="edgecolor">Marker edge</label>
-            <select id="edgecolor" data-cfg><option value="black">Black</option><option value="white">White</option><option value="none">None</option></select></div>
-        </div>
-        <div id="scaleRows" hidden>
-          <div class="row"><label for="cmap">Colour map</label>
-            <select id="cmap" data-cfg>
-              <optgroup label="Sequential">
-                <option value="viridis">viridis</option><option value="cividis">cividis</option><option value="plasma">plasma</option>
-                <option value="inferno">inferno</option><option value="magma">magma</option>
-                <option value="rocket">rocket</option><option value="rocket_r">rocket (reversed)</option>
-                <option value="mako">mako</option><option value="mako_r">mako (reversed)</option>
-                <option value="flare">flare</option><option value="crest">crest</option>
-                <option value="YlOrRd">YlOrRd</option><option value="Blues">Blues</option><option value="Greys">Greys</option>
-              </optgroup>
-              <optgroup label="Diverging">
-                <option value="vlag">vlag</option><option value="icefire">icefire</option><option value="coolwarm">coolwarm</option>
-                <option value="RdBu_r">RdBu</option><option value="Spectral_r">Spectral</option>
-              </optgroup>
-              <optgroup label="Rainbow (use with care)">
-                <option value="turbo">turbo</option>
-              </optgroup>
-            </select></div>
-          <details class="sub" id="subCbar">
-            <summary>Colour range &amp; colour bar</summary>
-          <div class="row"><label>Colour range</label><div class="pair"><input type="text" id="huemin" data-cfg placeholder="min"><input type="text" id="huemax" data-cfg placeholder="max"></div></div>
-          <label class="check" id="huelogRow"><input type="checkbox" id="huelog" data-cfg> Log colour scale</label>
-          <label class="check" id="huerobustRow" title="A few extreme values can squash everything else into one colour. This sets the colour range to the 2nd–98th percentile; values beyond it get the end colours (arrows on the colour bar)."><input type="checkbox" id="huerobust" data-cfg> Ignore extreme values (2–98 %)</label>
-          <div class="row"><label for="huelabel">Colour bar label</label><input type="text" id="huelabel" data-cfg placeholder="column name"></div>
-          <div class="row" id="cbarSizeRow"><label title="Length as % of the panel's height, thickness as % of its width. Blank: automatic.">Colour bar size</label><input type="number" id="cbarlen" data-cfg min="5" max="100" step="5" placeholder="length %"><input type="number" id="cbarwid" data-cfg min="0.5" max="30" step="0.5" placeholder="thick %"></div>
-          <div class="row"><label for="cbarpos">Colour bar position</label><select id="cbarpos" data-cfg>
-            <optgroup label="Outside the plot"><option value="right">Right</option><option value="left">Left</option><option value="top">Top</option><option value="bottom">Bottom</option></optgroup>
-            <optgroup label="Inside the plot"><option value="in-ur">Inside, upper right</option><option value="in-ul">Inside, upper left</option><option value="in-lr">Inside, lower right</option><option value="in-ll">Inside, lower left</option><option value="in-top">Inside, along the top</option><option value="in-bottom">Inside, along the bottom</option></optgroup>
-          </select></div>
-          <div class="row"><label title="Which side of the bar its tick labels and title go. Left/right apply to upright bars, top/bottom to horizontal ones.">Bar ticks · title side</label><select id="cbartickside" data-cfg><option value="">auto</option><option value="left">left</option><option value="right">right</option><option value="top">top</option><option value="bottom">bottom</option></select><select id="cbarlabelside" data-cfg><option value="">auto</option><option value="left">left</option><option value="right">right</option><option value="top">top</option><option value="bottom">bottom</option></select></div>
-          <label class="check"><input type="checkbox" id="cbarbox" data-cfg> White box behind an inside colour bar</label>
-          <div class="row"><label for="cbarticks">Colour bar ticks</label><select id="cbarticks" data-cfg><option value="shown">Marks + labels</option><option value="labels">Labels only</option><option value="none">Hidden</option></select></div>
-          <div class="row"><label for="cbarnticks" title="Roughly how many labelled ticks (blank: automatic)">Number · direction</label><input type="number" id="cbarnticks" data-cfg min="2" max="15" step="1" placeholder="auto"><select id="cbartickdir" data-cfg><option value="">auto</option><option value="out">out</option><option value="in">in</option><option value="inout">across</option></select></div>
-          <label class="check"><input type="checkbox" id="cbarminor" data-cfg> Colour bar minor ticks</label>
+        <div class="row"><label for="sizeby">Size by</label><select id="sizeby" data-cfg data-col></select></div>
+        <div class="row" id="sizeRangeRow" hidden><label>Size range</label><div class="pair"><input type="text" id="sizemin" data-cfg value="2" title="Smallest marker (pt)"><input type="text" id="sizemax" data-cfg value="9" title="Largest marker (pt)"></div></div>
+        <div class="row"><label for="styleby">Shape by</label><select id="styleby" data-cfg data-col></select></div>
+        <div class="row"><label for="edgecolor">Marker edge</label>
+          <select id="edgecolor" data-cfg><option value="black">Black</option><option value="white">White</option><option value="none">None</option></select></div>
+        <h3 class="subhead">Vectors</h3>
+        <label class="check"><input type="checkbox" id="vector" data-cfg> Draw points as lines (vectors)</label>
+        <div id="vecRows" hidden>
+          <div class="row"><label for="vecdir">Direction from</label><select id="vecdir" data-cfg data-col></select></div>
+          <div class="row"><label for="vecdirconv">Direction is</label>
+            <select id="vecdirconv" data-cfg><option value="up_cw">0° = up, clockwise +</option><option value="right_ccw">0° = horizontal, anticlockwise + (90° = up)</option></select></div>
+          <div class="row"><label for="veclen">Length from</label><select id="veclen" data-cfg data-col></select></div>
+          <details class="sub" id="subVec">
+            <summary>Vector line style</summary>
+          <div class="row"><label for="veclenmax">Longest (pt)</label><input type="number" id="veclenmax" data-cfg value="14" min="1" step="1"></div>
+          <div class="row"><label for="vecwidth">Line width</label><input type="number" id="vecwidth" data-cfg value="1.2" min="0.2" step="0.1"></div>
+          <div class="row"><label for="vecstyle">Line</label>
+            <select id="vecstyle" data-cfg><option value="axial">Centred on the point (axial, e.g. Dpar)</option><option value="arrow">From the point outwards</option></select></div>
+          <label class="check"><input type="checkbox" id="vecdot" data-cfg> Dot at each point</label>
           </details>
+          <p class="hint">Direction “none” uses the point's angle on a polar plot. Colour comes from <b>Colour by</b>.</p>
         </div>
-            </details>
-<details class="sec" id="sec-stats">
+        </div>
+      </details>
+      </div>
+      <div class="ttpane" data-tt="stats" hidden>
+      <details class="sec" id="sec-stats" open>
         <summary>Statistics &amp; lines <span class="badge" id="b-stats"></span></summary>
         <h3 class="subhead">Mean / median lines</h3>
         <div class="checks4">
@@ -342,59 +319,17 @@
         </div>
       </details>
       </div>
-      <div class="ttpane" data-tt="layout" hidden>
-      <details class="sec" id="sec-layout" open>
-        <summary>Figure layout <span class="badge" id="b-layout"></span></summary>
-        
-        <p class="hint" id="layoutHint">One panel. Use <b>+ Duplicate</b> or <b>+ Blank</b> above the plot to add panels; these settings then apply to the whole figure.</p>
-        <h3 class="subhead">Grid &amp; size</h3>
-        <div class="row"><label for="lay-cols">Columns</label>
-          <input type="number" id="lay-cols" data-lay min="1" max="30" step="1" placeholder="auto" title="Number of grid columns (blank: automatic)"></div>
-        <div class="row"><label for="lay-size">Figure width</label>
-          <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
-        <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
-        <div class="row"><label for="lay-aspect">Panel height ÷ width</label><input type="number" id="lay-aspect" data-lay value="0.75" min="0.2" max="3" step="0.05"></div>
-        <details class="sub" id="subSpacing">
-          <summary>Fine spacing (column widths, row heights, gaps)</summary>
-        <div class="row"><label for="lay-colwidths" title="Relative widths, e.g. 2, 1 makes the first column twice as wide">Column widths</label><input type="text" id="lay-colwidths" data-lay placeholder="equal, e.g. 2, 1"></div>
-        <div class="row"><label for="lay-rowheights" title="Relative heights, e.g. 1, 0.5. Blank: each row fits its panels">Row heights</label><input type="text" id="lay-rowheights" data-lay placeholder="auto, e.g. 1, 0.5"></div>
-        <div class="row"><label for="lay-spacing" title="Automatic spacing between panels (0 = as tight as the labels allow)">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
-        <div class="row"><label for="lay-gapx" title="Extra gap between columns after the automatic layout, in mm. Negative pulls panels closer together (useful once inner labels are hidden).">Column gap ± mm</label><input type="number" id="lay-gapx" data-lay value="0" min="-30" max="30" step="0.5"></div>
-        <div class="row"><label for="lay-gapy" title="Extra gap between rows after the automatic layout, in mm. Negative pulls panels closer together.">Row gap ± mm</label><input type="number" id="lay-gapy" data-lay value="0" min="-30" max="30" step="0.5"></div>
-        </details>
-        <h3 class="subhead">Axes across panels</h3>
-        <div class="row"><label for="lay-sharex">Same X range</label>
-          <select id="lay-sharex" data-lay><option value="none">No</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
-        <div class="row"><label for="lay-sharey">Same Y range</label>
-          <select id="lay-sharey" data-lay><option value="none">No</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
-        <p class="hint">Only panels plotting the same variable on that axis are linked.</p>
-        <div class="row"><label for="lay-inner">Between panels</label>
-          <select id="lay-inner" data-lay><option value="keep">Keep all labels</option><option value="titles">Hide inner axis titles</option><option value="all">Hide inner titles and tick labels</option></select></div>
-        <div class="row"><label for="lay-mirrory">Y axis on right</label>
-          <select id="lay-mirrory" data-lay><option value="none">No</option><option value="right">Right-hand column</option><option value="all">All panels</option></select></div>
-        <div class="row"><label for="lay-mirrorx">X axis on top</label>
-          <select id="lay-mirrorx" data-lay><option value="none">No</option><option value="top">Top row</option><option value="all">All panels</option></select></div>
-        <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
-          <select id="lay-legend" data-lay><option value="each">Each panel</option><option value="right">One shared key, right</option><option value="below">One shared key, below</option></select></div>
-        <details class="sub" id="subLetters">
-          <summary>Panel letters</summary>
-        <div class="row"><label for="lay-labels">Style</label>
-          <select id="lay-labels" data-lay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="a.">a.</option><option value="A">A</option><option value="(A)">(A)</option><option value="A)">A)</option><option value="none">None</option></select></div>
-        <div class="row"><label for="lay-labelpos">Position</label>
-          <select id="lay-labelpos" data-lay><option value="outside">Outside top-left</option><option value="inside">Inside top-left</option></select></div>
-        </details>
-        <p class="hint">A panel's own <i>Panel label</i> (Style → Legend &amp; labels) overrides its letter. Hide a panel's axes under Axes.</p>
-              
-      </details>
-
-      <details class="sec" id="sec-axes">
-        <summary>Axes <span class="badge" id="b-axes"></span></summary>
+      <div class="ttpane" data-tt="axes" hidden>
+      <details class="sec" id="sec-titles" open>
+        <summary>Titles &amp; labels <span class="badge" id="b-titles"></span></summary>
         <div class="row"><label for="title">Title</label><input type="text" id="title" data-cfg></div>
+        <div class="row"><label for="panel">Panel label</label><input type="text" id="panel" data-cfg placeholder="e.g. (a)"></div>
         <div class="row"><label for="xlabel">X label</label><input type="text" id="xlabel" data-cfg placeholder="column name"></div>
         <div class="row"><label for="ylabel">Y label</label><input type="text" id="ylabel" data-cfg placeholder="column name"></div>
+        <p class="hint">Maths works: <code>$\delta^{18}$O (‰)</code>, <code>$^{4}$He</code>, <code>$T$ (°C)</code></p>
         <details class="sub" id="titleOpts">
           <summary>Title &amp; axis-title size and position</summary>
-          <p class="hint">Sizes in pt; blank uses the font size from Style. Gap = space to the plot in pt.</p>
+          <p class="hint">Sizes in pt; blank uses the font size set under Figure. Gap = space to the plot in pt.</p>
           <div class="row"><label>Title</label><input type="number" id="titlesize" data-cfg min="4" max="40" step="0.5" placeholder="size"><select id="titleloc" data-cfg><option value="center">centre</option><option value="left">left</option><option value="right">right</option></select></div>
           <div class="row"><label>Title gap · bold</label><input type="number" id="titlepad" data-cfg min="-30" max="60" step="1" placeholder="gap"><label class="check inline"><input type="checkbox" id="titlebold" data-cfg> bold</label></div>
           <div class="row"><label>X title</label><input type="number" id="xlabelsize" data-cfg min="4" max="40" step="0.5" placeholder="size"><select id="xlabelloc" data-cfg><option value="center">centre</option><option value="left">left</option><option value="right">right</option></select></div>
@@ -403,15 +338,18 @@
           <div class="row"><label>Y title gap · side</label><input type="number" id="ylabelpad" data-cfg min="-30" max="60" step="1" placeholder="gap"><select id="ylabelside" data-cfg><option value="left">left</option><option value="right">right</option></select></div>
           <div class="row"><label for="ticksize">Tick labels</label><input type="number" id="ticksize" data-cfg min="4" max="40" step="0.5" placeholder="size"></div>
         </details>
-        <p class="hint">Maths works: <code>$\delta^{18}$O (‰)</code>, <code>$^{4}$He</code>, <code>$T$ (°C)</code></p>
+      </details>
+
+      <details class="sec" id="sec-axes" open>
+        <summary>Axes <span class="badge" id="b-axes"></span></summary>
         <div class="row"><label>X range</label><div class="pair"><input type="text" id="xmin" data-cfg placeholder="min"><input type="text" id="xmax" data-cfg placeholder="max"></div></div>
         <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ymin" data-cfg placeholder="min"><input type="text" id="ymax" data-cfg placeholder="max"></div></div>
         <div class="checks4">
-          <label class="check"><input type="checkbox" id="xlog" data-cfg> Log X</label>
-          <label class="check"><input type="checkbox" id="ylog" data-cfg> Log Y</label>
-          <label class="check"><input type="checkbox" id="xinvert" data-cfg> Invert X</label>
-          <label class="check"><input type="checkbox" id="yinvert" data-cfg> Invert Y</label>
-        </div>
+                  <label class="check"><input type="checkbox" id="xlog" data-cfg> Log X</label>
+                  <label class="check"><input type="checkbox" id="ylog" data-cfg> Log Y</label>
+                  <label class="check"><input type="checkbox" id="xinvert" data-cfg> Invert X</label>
+                  <label class="check"><input type="checkbox" id="yinvert" data-cfg> Invert Y</label>
+                </div>
         <div class="row" id="ticksRow"><label for="ticks">Ticks</label><select id="ticks" data-cfg><option value="in">Inward, all four sides</option><option value="out">Outward</option></select></div>
         <details class="sub" id="subTicks">
           <summary>Ticks &amp; grid</summary>
@@ -419,50 +357,17 @@
         <div class="row"><label for="grid">Grid</label><select id="grid" data-cfg><option value="none">None</option><option value="major">Major</option><option value="both">Major + minor</option></select></div>
         <div class="row"><label for="xrot">X tick angle</label><input type="number" id="xrot" data-cfg value="0" step="15" min="0" max="90"></div>
         </details>
-        <div class="checks4">
-          <label class="check"><input type="checkbox" id="hidex" data-cfg> Hide X axis</label>
-          <label class="check"><input type="checkbox" id="hidey" data-cfg> Hide Y axis</label>
-          <label class="check"><input type="checkbox" id="hideaxes" data-cfg> Hide all axes</label>
-        </div>
-        <div id="panelSizeRows" hidden>
-          <h3 class="subhead">This panel's size</h3>
-          <div class="row"><label for="spanc" title="How many grid columns this panel spans">Width (columns)</label><input type="number" id="spanc" data-cfg min="1" max="6" step="1" placeholder="1"></div>
-          <div class="row"><label for="spanr" title="How many grid rows this panel spans">Height (rows)</label><input type="number" id="spanr" data-cfg min="1" max="6" step="1" placeholder="1"></div>
-          <div class="row"><label for="paspect" title="Fix this panel's plot area to height ÷ width (e.g. 1 = square). Blank: fill its cell.">Height ÷ width</label><input type="number" id="paspect" data-cfg min="0.1" max="5" step="0.05" placeholder="auto"></div>
-          <p class="hint">Column widths and row heights for the whole grid are under Figure layout.</p>
-        </div>
-            </details>
-
-      <details class="sec" id="sec-style">
-        <summary>Style <span class="badge" id="b-style"></span></summary>
-
-        <h3 class="subhead">Figure</h3>
-        <p class="hint" id="sizeMultiHint" hidden>Multi-panel figure: size is set under <b>Figure layout</b>.</p>
-        <div class="row"><label for="size">Figure size</label>
-          <select id="size" data-cfg>
-            <option value="single">Single column (89 mm)</option>
-            <option value="onehalf">1.5 column (140 mm)</option>
-            <option value="double">Full width (183 mm)</option>
-            <option value="screen">Slides (8 × 5 in)</option>
-            <option value="custom">Custom…</option>
-          </select></div>
-        <div class="row" id="customSize" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="width" data-cfg value="3.5"><input type="text" id="height" data-cfg value="2.6"></div></div>
-        <div class="row"><label for="theme">Theme</label>
-          <select id="theme" data-cfg>
-            <option value="publication">Publication (boxed, inward ticks)</option>
-            <option value="ticks">seaborn ticks</option>
-            <option value="white">seaborn white</option>
-            <option value="whitegrid">seaborn whitegrid</option>
-            <option value="darkgrid">seaborn darkgrid</option>
-          </select></div>
         <label class="check"><input type="checkbox" id="despine" data-cfg> Remove top and right axes (despine)</label>
-
-        <h3 class="subhead">Text</h3>
-        <div class="row"><label for="font">Font</label>
-          <select id="font" data-cfg><option value="sans">Sans (DejaVu)</option><option value="serif">Serif (STIX, Times-like)</option><option value="cm">Computer Modern (LaTeX)</option></select></div>
-        <div class="row"><label for="fontsize">Font size (pt)</label><input type="number" id="fontsize" data-cfg value="9" min="5" max="24"></div>
-
-        <h3 class="subhead">Colours &amp; markers</h3>
+        <div class="checks4">
+                  <label class="check"><input type="checkbox" id="hidex" data-cfg> Hide X axis</label>
+                  <label class="check"><input type="checkbox" id="hidey" data-cfg> Hide Y axis</label>
+                  <label class="check"><input type="checkbox" id="hideaxes" data-cfg> Hide all axes</label>
+                </div>
+      </details>
+      </div>
+      <div class="ttpane" data-tt="colour" hidden>
+      <details class="sec" id="sec-colour" open>
+        <summary>Colours <span class="badge" id="b-colour"></span></summary>
         <div class="row"><label for="palette">Colours</label>
           <select id="palette" data-cfg>
             <optgroup label="Colour-blind safe">
@@ -497,24 +402,132 @@
             </optgroup>
           </select></div>
         <div class="swatches" id="swatches"></div>
-        <div class="row"><label for="markerfill">Markers</label>
-          <select id="markerfill" data-cfg><option value="filled">Filled</option><option value="open">Open</option></select></div>
-        <label class="check"><input type="checkbox" id="varymarkers" data-cfg checked> Different marker shape per series</label>
-        <div class="row"><label for="alpha">Opacity</label><input type="number" id="alpha" data-cfg value="1" step="0.05" min="0.05" max="1"></div>
-        <div class="row"><label for="markersize">Marker size</label><input type="number" id="markersize" data-cfg value="4" step="0.5" min="1"></div>
-        <details class="sub" id="subLines">
-          <summary>Line width &amp; error bar caps</summary>
-        <div class="row"><label for="linewidth">Line width</label><input type="number" id="linewidth" data-cfg value="1.2" step="0.1" min="0.2"></div>
-        <div class="row"><label for="capsize">Error bar caps</label><input type="number" id="capsize" data-cfg value="2" step="0.5" min="0"></div>
-        </details>
+        <div id="hueRows">
+        <div class="row"><label for="hue">Colour by</label><select id="hue" data-cfg data-col></select></div>
+        <label class="check" id="huecatRow" hidden><input type="checkbox" id="huecat" data-cfg> Treat numbers as categories</label>
+        </div>
+        <div id="scaleRows" hidden>
+          <div class="row"><label for="cmap">Colour map</label>
+            <select id="cmap" data-cfg>
+              <optgroup label="Sequential">
+                <option value="viridis">viridis</option><option value="cividis">cividis</option><option value="plasma">plasma</option>
+                <option value="inferno">inferno</option><option value="magma">magma</option>
+                <option value="rocket">rocket</option><option value="rocket_r">rocket (reversed)</option>
+                <option value="mako">mako</option><option value="mako_r">mako (reversed)</option>
+                <option value="flare">flare</option><option value="crest">crest</option>
+                <option value="YlOrRd">YlOrRd</option><option value="Blues">Blues</option><option value="Greys">Greys</option>
+              </optgroup>
+              <optgroup label="Diverging">
+                <option value="vlag">vlag</option><option value="icefire">icefire</option><option value="coolwarm">coolwarm</option>
+                <option value="RdBu_r">RdBu</option><option value="Spectral_r">Spectral</option>
+              </optgroup>
+              <optgroup label="Rainbow (use with care)">
+                <option value="turbo">turbo</option>
+              </optgroup>
+            </select></div>
+          <details class="sub" id="subCbar">
+            <summary>Colour range &amp; colour bar</summary>
+          <div class="row"><label>Colour range</label><div class="pair"><input type="text" id="huemin" data-cfg placeholder="min"><input type="text" id="huemax" data-cfg placeholder="max"></div></div>
+          <label class="check" id="huelogRow"><input type="checkbox" id="huelog" data-cfg> Log colour scale</label>
+          <label class="check" id="huerobustRow" title="A few extreme values can squash everything else into one colour. This sets the colour range to the 2nd–98th percentile; values beyond it get the end colours (arrows on the colour bar)."><input type="checkbox" id="huerobust" data-cfg> Ignore extreme values (2–98 %)</label>
+          <div class="row"><label for="huelabel">Colour bar label</label><input type="text" id="huelabel" data-cfg placeholder="column name"></div>
+          <div class="row" id="cbarSizeRow"><label title="Length as % of the panel's height, thickness as % of its width. Blank: automatic.">Colour bar size</label><input type="number" id="cbarlen" data-cfg min="5" max="100" step="5" placeholder="length %"><input type="number" id="cbarwid" data-cfg min="0.5" max="30" step="0.5" placeholder="thick %"></div>
+          <div class="row"><label for="cbarpos">Colour bar position</label><select id="cbarpos" data-cfg>
+            <optgroup label="Outside the plot"><option value="right">Right</option><option value="left">Left</option><option value="top">Top</option><option value="bottom">Bottom</option></optgroup>
+            <optgroup label="Inside the plot"><option value="in-ur">Inside, upper right</option><option value="in-ul">Inside, upper left</option><option value="in-lr">Inside, lower right</option><option value="in-ll">Inside, lower left</option><option value="in-top">Inside, along the top</option><option value="in-bottom">Inside, along the bottom</option></optgroup>
+          </select></div>
+          <div class="row"><label title="Which side of the bar its tick labels and title go. Left/right apply to upright bars, top/bottom to horizontal ones.">Bar ticks · title side</label><select id="cbartickside" data-cfg><option value="">auto</option><option value="left">left</option><option value="right">right</option><option value="top">top</option><option value="bottom">bottom</option></select><select id="cbarlabelside" data-cfg><option value="">auto</option><option value="left">left</option><option value="right">right</option><option value="top">top</option><option value="bottom">bottom</option></select></div>
+          <label class="check"><input type="checkbox" id="cbarbox" data-cfg> White box behind an inside colour bar</label>
+          <div class="row"><label for="cbarticks">Colour bar ticks</label><select id="cbarticks" data-cfg><option value="shown">Marks + labels</option><option value="labels">Labels only</option><option value="none">Hidden</option></select></div>
+          <div class="row"><label for="cbarnticks" title="Roughly how many labelled ticks (blank: automatic)">Number · direction</label><input type="number" id="cbarnticks" data-cfg min="2" max="15" step="1" placeholder="auto"><select id="cbartickdir" data-cfg><option value="">auto</option><option value="out">out</option><option value="in">in</option><option value="inout">across</option></select></div>
+          <label class="check"><input type="checkbox" id="cbarminor" data-cfg> Colour bar minor ticks</label>
+          </details>
+        </div>
+      </details>
 
-        <h3 class="subhead">Legend &amp; labels</h3>
+      <details class="sec" id="sec-legend" open>
+        <summary>Legend <span class="badge" id="b-legend"></span></summary>
         <div class="row"><label for="legend">Legend</label>
           <select id="legend" data-cfg><option value="best">Best position (below if it has colour/size/shape keys)</option><option value="upper left">Upper left</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="lower right">Lower right</option><option value="outside">Outside, right</option><option value="below">Below plot</option><option value="off">Off</option></select></div>
         <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
         <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
-        <div class="row"><label for="panel">Panel label</label><input type="text" id="panel" data-cfg placeholder="e.g. (a)"></div>
-            </details>
+        <div id="legendMultiRows" hidden>
+        <h3 class="subhead">Multi-panel figures</h3>
+        <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
+          <select id="lay-legend" data-lay><option value="each">Each panel</option><option value="right">One shared key, right</option><option value="below">One shared key, below</option></select></div>
+        </div>
+      </details>
+      </div>
+      <div class="ttpane" data-tt="figure" hidden>
+      <details class="sec" id="sec-figure" open>
+        <summary>Figure <span class="badge" id="b-figure"></span></summary>
+        <div class="row"><label for="size">Figure size</label>
+          <select id="size" data-cfg>
+            <option value="single">Single column (89 mm)</option>
+            <option value="onehalf">1.5 column (140 mm)</option>
+            <option value="double">Full width (183 mm)</option>
+            <option value="screen">Slides (8 × 5 in)</option>
+            <option value="custom">Custom…</option>
+          </select></div>
+        <div class="row" id="customSize" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="width" data-cfg value="3.5"><input type="text" id="height" data-cfg value="2.6"></div></div>
+        <div class="row" id="laySizeRow" hidden><label for="lay-size">Figure size</label>
+          <select id="lay-size" data-lay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="screen">Slides (10 in)</option><option value="custom">Custom…</option></select></div>
+        <div class="row" id="layCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="text" id="lay-width" data-lay value="7.2"><input type="text" id="lay-height" data-lay placeholder="auto"></div></div>
+        <div class="row"><label for="theme">Theme</label>
+          <select id="theme" data-cfg>
+            <option value="publication">Publication (boxed, inward ticks)</option>
+            <option value="ticks">seaborn ticks</option>
+            <option value="white">seaborn white</option>
+            <option value="whitegrid">seaborn whitegrid</option>
+            <option value="darkgrid">seaborn darkgrid</option>
+          </select></div>
+        <div class="row"><label for="font">Font</label>
+          <select id="font" data-cfg><option value="sans">Sans (DejaVu)</option><option value="serif">Serif (STIX, Times-like)</option><option value="cm">Computer Modern (LaTeX)</option></select></div>
+        <div class="row"><label for="fontsize">Font size (pt)</label><input type="number" id="fontsize" data-cfg value="9" min="5" max="24"></div>
+      </details>
+
+      <details class="sec" id="sec-layout" open>
+        <summary>Panels <span class="badge" id="b-layout"></span></summary>
+        <p class="hint" id="layoutHint">One panel. Use <b>+ Duplicate</b> or <b>+ Blank</b> above the plot to add panels; these settings then apply to the whole figure.</p>
+        <div class="row"><label for="lay-cols">Columns</label>
+          <input type="number" id="lay-cols" data-lay min="1" max="30" step="1" placeholder="auto" title="Number of grid columns (blank: automatic)"></div>
+        <div class="row"><label for="lay-aspect">Panel height ÷ width</label><input type="number" id="lay-aspect" data-lay value="0.75" min="0.2" max="3" step="0.05"></div>
+        <details class="sub" id="subSpacing">
+          <summary>Fine spacing (column widths, row heights, gaps)</summary>
+        <div class="row"><label for="lay-colwidths" title="Relative widths, e.g. 2, 1 makes the first column twice as wide">Column widths</label><input type="text" id="lay-colwidths" data-lay placeholder="equal, e.g. 2, 1"></div>
+        <div class="row"><label for="lay-rowheights" title="Relative heights, e.g. 1, 0.5. Blank: each row fits its panels">Row heights</label><input type="text" id="lay-rowheights" data-lay placeholder="auto, e.g. 1, 0.5"></div>
+        <div class="row"><label for="lay-spacing" title="Automatic spacing between panels (0 = as tight as the labels allow)">Spacing</label><input type="number" id="lay-spacing" data-lay value="0.02" min="0" max="0.3" step="0.01"></div>
+        <div class="row"><label for="lay-gapx" title="Extra gap between columns after the automatic layout, in mm. Negative pulls panels closer together (useful once inner labels are hidden).">Column gap ± mm</label><input type="number" id="lay-gapx" data-lay value="0" min="-30" max="30" step="0.5"></div>
+        <div class="row"><label for="lay-gapy" title="Extra gap between rows after the automatic layout, in mm. Negative pulls panels closer together.">Row gap ± mm</label><input type="number" id="lay-gapy" data-lay value="0" min="-30" max="30" step="0.5"></div>
+        </details>
+        <h3 class="subhead">Axes across panels</h3>
+        <div class="row"><label for="lay-sharex">Same X range</label>
+          <select id="lay-sharex" data-lay><option value="none">No</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
+        <div class="row"><label for="lay-sharey">Same Y range</label>
+          <select id="lay-sharey" data-lay><option value="none">No</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
+        <p class="hint">Only panels plotting the same variable on that axis are linked.</p>
+        <div class="row"><label for="lay-inner">Between panels</label>
+          <select id="lay-inner" data-lay><option value="keep">Keep all labels</option><option value="titles">Hide inner axis titles</option><option value="all">Hide inner titles and tick labels</option></select></div>
+        <div class="row"><label for="lay-mirrory">Y axis on right</label>
+          <select id="lay-mirrory" data-lay><option value="none">No</option><option value="right">Right-hand column</option><option value="all">All panels</option></select></div>
+        <div class="row"><label for="lay-mirrorx">X axis on top</label>
+          <select id="lay-mirrorx" data-lay><option value="none">No</option><option value="top">Top row</option><option value="all">All panels</option></select></div>
+        <details class="sub" id="subLetters">
+          <summary>Panel letters</summary>
+        <div class="row"><label for="lay-labels">Style</label>
+          <select id="lay-labels" data-lay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="a.">a.</option><option value="A">A</option><option value="(A)">(A)</option><option value="A)">A)</option><option value="none">None</option></select></div>
+        <div class="row"><label for="lay-labelpos">Position</label>
+          <select id="lay-labelpos" data-lay><option value="outside">Outside top-left</option><option value="inside">Inside top-left</option></select></div>
+        </details>
+        <p class="hint">A panel's own <i>Panel label</i> (Axes → Titles &amp; labels) overrides its letter.</p>
+        <div id="panelSizeRows" hidden>
+          <h3 class="subhead">This panel's size</h3>
+          <div class="row"><label for="spanc" title="How many grid columns this panel spans">Width (columns)</label><input type="number" id="spanc" data-cfg min="1" max="6" step="1" placeholder="1"></div>
+          <div class="row"><label for="spanr" title="How many grid rows this panel spans">Height (rows)</label><input type="number" id="spanr" data-cfg min="1" max="6" step="1" placeholder="1"></div>
+          <div class="row"><label for="paspect" title="Fix this panel's plot area to height ÷ width (e.g. 1 = square). Blank: fill its cell.">Height ÷ width</label><input type="number" id="paspect" data-cfg min="0.1" max="5" step="0.05" placeholder="auto"></div>
+          <p class="hint">Column widths and row heights for the whole grid are under Fine spacing above.</p>
+        </div>
+      </details>
       </div>
     </aside>
     </div>
@@ -697,6 +710,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=38"></script>
+  <script type="module" src="app.js?v=39"></script>
 </body>
 </html>
