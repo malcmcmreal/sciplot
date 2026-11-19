@@ -108,7 +108,7 @@ async function loadData(sheet = null) {
     $('expname').placeholder = dataName();
     fillColumns(pending || { x: $('x').options.length ? $('x').value : undefined, series: getSeries() });
     if (firstLoad && toolTab() === 'file') setToolTab('plot');   // data in: on to plotting
-    fillSS();
+    try { fillSS(); } catch (e) { console.warn("Subsampling menus:", e); }   // never block the main plot
     if (currentView === 'ss') ssSchedule(0);
     showRaw();
     pending = null;
@@ -418,7 +418,7 @@ function applyCalc() {
     const keep = { x: $('x').value, series: getSeries(), cols: Object.fromEntries([...document.querySelectorAll('select[data-col]')].map((e) => [e.id, e.value])) };
     applyCalcPy();
     fillColumns(keep);
-    fillSS();
+    try { fillSS(); } catch (e) { console.warn("Subsampling menus:", e); }
     showTable();
     scheduleRender(0);
   } catch (e) { showError(e); }
@@ -1448,7 +1448,11 @@ function applySS(o) {
     if (!(k in o) || el.tagName === 'SELECT') return;
     if (el.type === 'checkbox') el.checked = !!o[k]; else el.value = o[k];
   });
-  ['mode', 'size', 'runcolor', 'legend', 'readoutpos'].forEach((k) => { if (k in o) $('ss-' + k).value = o[k]; });
+  ['mode', 'size', 'runcolor', 'legend', 'readoutpos'].forEach((k) => {
+    const el = $('ss-' + k);
+    if (k in o && [...el.options].some((op) => op.value === String(o[k]))) el.value = o[k];   // ignore stale values
+    if (el.value === '' && el.options.length) el.value = el.options[0].value;
+  });
   ssTouched = new Set(o.touched || []);
   ssFollow = !(o.n && o.n < 1e9);
   if (!ssFollow) $('ss-n').value = o.n;
@@ -1478,7 +1482,7 @@ function fillSS(pref) {
   $('ssSourceRow').hidden = !order.length;
   const t = ssTable();
   const nums = t.columns.filter((c, i) => t.numeric[i]);
-  const mode = pref.mode || $('ss-mode').value;
+  const mode = SS_DEFAULT[pref.mode] ? pref.mode : (SS_DEFAULT[$('ss-mode').value] ? $('ss-mode').value : 'mean');
   const dflt = nums.find((c) => SS_DEFAULT[mode].test(c)) ?? nums[0];
   const pick = (k, list, auto) => (ssTouched.has(k) && (pref[k] === '' || list.includes(pref[k])) ? pref[k] : auto);
   ssOptions($('ss-value'), nums, ssTouched.has('value') && nums.includes(pref.value) ? pref.value : dflt);
@@ -1545,7 +1549,7 @@ document.querySelectorAll('[data-ss]').forEach((el) => {
     if (k === 'mode') {
       const t = ssTable();
       const nums = t.columns.filter((c, i) => t.numeric[i]);
-      const d = nums.find((c) => SS_DEFAULT[el.value].test(c));
+      const d = nums.find((c) => (SS_DEFAULT[el.value] || SS_DEFAULT.mean).test(c));
       if (d) $('ss-value').value = d;
       if (!ssTolTouched) $('ss-tol').value = el.value === 'mean' ? 2 : 10;
       ssVisibility();
