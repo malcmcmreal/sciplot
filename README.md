@@ -55,7 +55,7 @@ The sidebar opens on Plot once data is loaded and remembers the last tab. The ta
 
 ## Titles and axis titles
 
-Under **Layout & style → Axes → Title & axis-title size and position**, each panel can set its own sizes for the title, X title, Y title and tick labels. The title can sit left, centre or right and be bold, the X title left, centre or right, and the Y title bottom, middle or top, on the left or right side. Each has a gap (in pt) that moves it closer to or further from the plot.
+Under **Axes → Titles & labels → Title & axis-title size and position**, each panel can set its own sizes for the title, X title, Y title and tick labels. The title can sit left, centre or right and be bold, the X title left, centre or right, and the Y title bottom, middle or top, on the left or right side. Each has a gap (in pt) that moves it closer to or further from the plot.
 
 ## Calculated columns
 
@@ -81,8 +81,8 @@ Each panel can plot a different sheet of the workbook: activate the panel, then 
 - shared X/Y limits, per row, column or across all panels (panels are only linked when they plot the same variable)
 - hiding inner tick labels or titles
 - mirroring axes to the right/top
-- **Colour bar** options (Colour section): position (right, left, top, bottom), length as % of the panel's height and thickness as % of its width (so the bar follows a panel with its own size or aspect), ticks shown / labels only / hidden, number of ticks, tick direction and minor ticks
-- **Ignore extreme values** (Colour section) sets a numeric colour range to the 2nd–98th percentile, so a few outliers don't squash every other point into one colour
+- **Colour bar** options (Colour tab): position (right, left, top, bottom), length as % of the panel's height and thickness as % of its width (so the bar follows a panel with its own size or aspect), ticks shown / labels only / hidden, number of ticks, tick direction and minor ticks
+- **Ignore extreme values** (Colour tab) sets a numeric colour range to the 2nd–98th percentile, so a few outliers don't squash every other point into one colour
 - one shared legend / colour key for the whole figure (right or below) instead of one per panel; panels colouring by the same column always share one colour scale
 - automatic panel letters, e.g. (a) / a / A, outside or inside each panel
 
