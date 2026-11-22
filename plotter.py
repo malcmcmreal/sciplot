@@ -10,6 +10,7 @@ be reproduced from a script:
 import io
 import csv
 import json
+import math
 import base64
 
 import numpy as np
@@ -2423,9 +2424,21 @@ def _ss_runs(c, x):
     return run, ghosts
 
 
-def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
-    """Running mean or running 2σ of randomly drawn values against the number measured."""
-    c = json.loads(cfg_json)
+def _ss_size(L):
+    """Figure size (inches) for the Subsampling tab: a preset, or custom W × H; an optional
+    height ÷ width overrides the height."""
+    if L.get("size") == "custom":
+        w, h = _num(L.get("width")) or 7.2, _num(L.get("height")) or 4.0
+    else:
+        w, h = SS_SIZES.get(L.get("size") or "double", SS_SIZES["double"])
+    a = _num(L.get("aspect"))
+    if a:
+        h = w * a
+    return max(w, 1.0), max(h, 0.8)
+
+
+def _ss_draw(fig, ax, c, rc):
+    """One running mean / running 2σ plot on ax. Returns (messages, sizes)."""
     ss = c.get("ss", {})
     mode = ss.get("mode", "mean")
     x, x_ref, cut, labels, where = _ss_data(c)
@@ -2440,157 +2453,261 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
         tol /= 100
     tol_txt = f"±{tol:g}" if absolute else f"±{tol * 100:g}%"
     msgs = []
-    size = SS_SIZES.get(ss.get("size", "double"), SS_SIZES["double"])
-    rc = _style(c)
-    with plt.rc_context(rc):
-        fig, ax = plt.subplots(figsize=size, layout="constrained")
-        if N < start + 1:
-            ax.text(0.5, 0.5, f"Need at least {start + 1} values in this selection (have {N})",
-                    ha="center", va="center", transform=ax.transAxes)
-            ax.set_axis_off()
+    if N < start + 1:
+        ax.text(0.5, 0.5, f"Need at least {start + 1} values in this selection (have {N})",
+                ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+    else:
+        ns = np.arange(1, N + 1)
+        val = ss.get("value")
+        run_col = ss.get("runcolor") or "#7B3294"
+        ref_col = ss.get("refcolor") or "#1f77b4"
+        sty = lambda k, col, w: (ss.get(k + "color") or col, _num(ss.get("w" + k)) or w)
+        sd_col, sd_w = sty("sd", ref_col, 1)
+        fun_col, fun_w = sty("fun", "#808080", 1)
+        cut_col, cut_w = sty("cut", "#D55E00", 1.2)
+        gh_col, gh_w = sty("ghost", "#8c8c8c", 0.8)
+        line_col, line_w = sty("line", run_col, 1.6)
+        ref_w = _num(ss.get("wref")) or 2
+        vals = ss.get("lgvalues", True)              # numbers in the legend labels
+        def lab(key, full, short):
+            """legend label, or None when this element is left out of the legend"""
+            return (full if vals else short) if ss.get("lg" + key, key != "ghost") else None
+        if mode == "mean":
+            ref = float(x.mean())
+            sd = float(x.std(ddof=1)) if N > 1 else np.nan
+            ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
+                       label=lab("ref", f"Mean of all selected data ({ref:.3f}, N = {N})", "Mean of all selected data"))
+            if np.isfinite(sd) and ss.get("sdlines", True):
+                ax.axhline(ref + sd, color=sd_col, lw=sd_w, ls=":", zorder=2)
+                ax.axhline(ref - sd, color=sd_col, lw=sd_w, ls=":", zorder=2,
+                           label=lab("sd", f"± 1 SD of the data ({sd:.3f})", "± 1 SD of the data"))
+            if cut and len(x_ref) and len(x_ref) != N:
+                mref = float(x_ref.mean())
+                ax.axhline(mref, color=cut_col, lw=cut_w, ls="-.", zorder=2,
+                           label=lab("cut", f"Mean before the {ss.get('dparcol')} cut ({mref:.3f}, N = {len(x_ref)})",
+                                     f"Mean before the {ss.get('dparcol')} cut"))
+            if ss.get("funnel", True) and np.isfinite(sd):
+                m = ns
+                fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
+                half = 2 * sd / np.sqrt(m) * fpc
+                ax.plot(m, ref + half, "--", color=fun_col, lw=fun_w, zorder=2)
+                ax.plot(m, ref - half, "--", color=fun_col, lw=fun_w, zorder=2,
+                        label=lab("fun", "Expected 95% range of the running mean (± 2·SD/√n)",
+                                  "Expected 95% range of the running mean"))
+            what, unit_ref = "mean", ref
         else:
-            ns = np.arange(1, N + 1)
-            val = ss.get("value")
-            run_col = ss.get("runcolor") or "#7B3294"
-            ref_col = ss.get("refcolor") or "#1f77b4"
-            sty = lambda k, col, w: (ss.get(k + "color") or col, _num(ss.get("w" + k)) or w)
-            sd_col, sd_w = sty("sd", ref_col, 1)
-            fun_col, fun_w = sty("fun", "#808080", 1)
-            cut_col, cut_w = sty("cut", "#D55E00", 1.2)
-            gh_col, gh_w = sty("ghost", "#8c8c8c", 0.8)
-            line_col, line_w = sty("line", run_col, 1.6)
-            ref_w = _num(ss.get("wref")) or 2
-            vals = ss.get("lgvalues", True)              # numbers in the legend labels
-            def lab(key, full, short):
-                """legend label, or None when this element is left out of the legend"""
-                return (full if vals else short) if ss.get("lg" + key, key != "ghost") else None
-            if mode == "mean":
-                ref = float(x.mean())
-                sd = float(x.std(ddof=1)) if N > 1 else np.nan
-                ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
-                           label=lab("ref", f"Mean of all selected data ({ref:.3f}, N = {N})", "Mean of all selected data"))
-                if np.isfinite(sd) and ss.get("sdlines", True):
-                    ax.axhline(ref + sd, color=sd_col, lw=sd_w, ls=":", zorder=2)
-                    ax.axhline(ref - sd, color=sd_col, lw=sd_w, ls=":", zorder=2,
-                               label=lab("sd", f"± 1 SD of the data ({sd:.3f})", "± 1 SD of the data"))
-                if cut and len(x_ref) and len(x_ref) != N:
-                    mref = float(x_ref.mean())
-                    ax.axhline(mref, color=cut_col, lw=cut_w, ls="-.", zorder=2,
-                               label=lab("cut", f"Mean before the {ss.get('dparcol')} cut ({mref:.3f}, N = {len(x_ref)})",
-                                         f"Mean before the {ss.get('dparcol')} cut"))
-                if ss.get("funnel", True) and np.isfinite(sd):
-                    m = ns
-                    fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
-                    half = 2 * sd / np.sqrt(m) * fpc
-                    ax.plot(m, ref + half, "--", color=fun_col, lw=fun_w, zorder=2)
-                    ax.plot(m, ref - half, "--", color=fun_col, lw=fun_w, zorder=2,
-                            label=lab("fun", "Expected 95% range of the running mean (± 2·SD/√n)",
-                                      "Expected 95% range of the running mean"))
-                what, unit_ref = "mean", ref
+            ref = float(2 * x.std(ddof=1))
+            ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
+                       label=lab("ref", f"2σ of all selected data ({ref:.3f}, N = {N})", "2σ of all selected data"))
+            if cut and len(x_ref) > 1 and len(x_ref) != N:
+                r0 = float(2 * x_ref.std(ddof=1))
+                ax.axhline(r0, color=cut_col, lw=cut_w, ls="-.", zorder=2,
+                           label=lab("cut", f"2σ before the {ss.get('dparcol')} cut ({r0:.3f}, N = {len(x_ref)})",
+                                     f"2σ before the {ss.get('dparcol')} cut"))
+            if ss.get("funnel", True):
+                m = ns[1:]
+                fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
+                half = 2 * ref / np.sqrt(2 * (m - 1)) * fpc
+                ax.plot(m, ref + half, "--", color=fun_col, lw=fun_w, zorder=2)
+                ax.plot(m, np.clip(ref - half, 0, None), "--", color=fun_col, lw=fun_w, zorder=2,
+                        label=lab("fun", "Expected 95% spread of 2σ (normal approx.)", "Expected 95% spread of 2σ"))
+            what, unit_ref = "2σ", ref
+        if ss.get("tolband"):
+            band = tol if absolute else tol * abs(ref)
+            ax.axhspan(ref - band, ref + band, color=ss.get("refcolor") or "#1f77b4", alpha=0.12, lw=0, zorder=1,
+                       label=lab("band", f"Tolerance {tol_txt}", "Tolerance band"))
+        lo_i = start - 1
+        for gi, g in enumerate(ghosts):
+            ax.plot(ns[lo_i:n], g[lo_i:n], color=gh_col, alpha=0.25, lw=gh_w, zorder=1,
+                    label=lab("ghost", f"Other random orders ({len(ghosts)})", "Other random orders") if gi == 0 else None)
+        w = int(_num(ss.get("smooth")) or 1)
+        if ss.get("line", True):
+            ax.plot(ns[lo_i:n], _smooth(run[lo_i:n], w), "-", color=line_col, lw=line_w, alpha=0.9, zorder=3,
+                    label=lab("line", f"Running {what} line" + (f" (smoothed, window {w})" if w > 1 else ""),
+                              f"Running {what} line"))
+        ax.plot(ns[lo_i:n], run[lo_i:n], "o", ms=_num(ss.get("dotsize")) or 3.5, color=run_col, alpha=0.6,
+                zorder=3, label=lab("dots", f"Running {what} (this random order)", f"Running {what}"))
+        ax.plot(ns[n - 1], run[n - 1], "o", ms=9, mfc="none", mec="k", zorder=4)
+        allv = np.concatenate([run[lo_i:]] + [g[lo_i:] for g in ghosts] + [[ref]])
+        if mode == "mean" and np.isfinite(sd):
+            allv = np.concatenate([allv, [ref - sd, ref + sd]])
+        allv = allv[np.isfinite(allv)]
+        pad = 0.05 * (np.ptp(allv) or 1)
+        ylo = allv.min() - pad
+        ax.set_ylim(max(0, ylo) if mode != "mean" else ylo, allv.max() + pad)
+        if _num(ss.get("ymin")) is not None or _num(ss.get("ymax")) is not None:
+            ax.set_ylim(bottom=_num(ss.get("ymin")), top=_num(ss.get("ymax")))
+        ax.set_xlim(0, N + 1)
+        ax.set_xlabel(ss.get("xlabel") or "Number of measurements, n")
+        ax.set_ylabel(ss.get("ylabel") or (f"Running mean of {val}" if mode == "mean" else f"2σ of {val}"))
+        if ss.get("title", True):
+            t = f"Running {what} of randomly drawn {val}"
+            bits = [b for b in [where] + labels if b]
+            if c.get("_multi") and bits:          # in a multi-panel figure: just what this panel selects
+                ax.set_title("  |  ".join(bits), fontsize=rc["font.size"])
             else:
-                ref = float(2 * x.std(ddof=1))
-                ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
-                           label=lab("ref", f"2σ of all selected data ({ref:.3f}, N = {N})", "2σ of all selected data"))
-                if cut and len(x_ref) > 1 and len(x_ref) != N:
-                    r0 = float(2 * x_ref.std(ddof=1))
-                    ax.axhline(r0, color=cut_col, lw=cut_w, ls="-.", zorder=2,
-                               label=lab("cut", f"2σ before the {ss.get('dparcol')} cut ({r0:.3f}, N = {len(x_ref)})",
-                                         f"2σ before the {ss.get('dparcol')} cut"))
-                if ss.get("funnel", True):
-                    m = ns[1:]
-                    fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
-                    half = 2 * ref / np.sqrt(2 * (m - 1)) * fpc
-                    ax.plot(m, ref + half, "--", color=fun_col, lw=fun_w, zorder=2)
-                    ax.plot(m, np.clip(ref - half, 0, None), "--", color=fun_col, lw=fun_w, zorder=2,
-                            label=lab("fun", "Expected 95% spread of 2σ (normal approx.)", "Expected 95% spread of 2σ"))
-                what, unit_ref = "2σ", ref
-            if ss.get("tolband"):
-                band = tol if absolute else tol * abs(ref)
-                ax.axhspan(ref - band, ref + band, color=ss.get("refcolor") or "#1f77b4", alpha=0.12, lw=0, zorder=1,
-                           label=lab("band", f"Tolerance {tol_txt}", "Tolerance band"))
-            lo_i = start - 1
-            for gi, g in enumerate(ghosts):
-                ax.plot(ns[lo_i:n], g[lo_i:n], color=gh_col, alpha=0.25, lw=gh_w, zorder=1,
-                        label=lab("ghost", f"Other random orders ({len(ghosts)})", "Other random orders") if gi == 0 else None)
-            w = int(_num(ss.get("smooth")) or 1)
-            if ss.get("line", True):
-                ax.plot(ns[lo_i:n], _smooth(run[lo_i:n], w), "-", color=line_col, lw=line_w, alpha=0.9, zorder=3,
-                        label=lab("line", f"Running {what} line" + (f" (smoothed, window {w})" if w > 1 else ""),
-                                  f"Running {what} line"))
-            ax.plot(ns[lo_i:n], run[lo_i:n], "o", ms=_num(ss.get("dotsize")) or 3.5, color=run_col, alpha=0.6,
-                    zorder=3, label=lab("dots", f"Running {what} (this random order)", f"Running {what}"))
-            ax.plot(ns[n - 1], run[n - 1], "o", ms=9, mfc="none", mec="k", zorder=4)
-            allv = np.concatenate([run[lo_i:]] + [g[lo_i:] for g in ghosts] + [[ref]])
-            if mode == "mean" and np.isfinite(sd):
-                allv = np.concatenate([allv, [ref - sd, ref + sd]])
-            allv = allv[np.isfinite(allv)]
-            pad = 0.05 * (np.ptp(allv) or 1)
-            ylo = allv.min() - pad
-            ax.set_ylim(max(0, ylo) if mode != "mean" else ylo, allv.max() + pad)
-            if _num(ss.get("ymin")) is not None or _num(ss.get("ymax")) is not None:
-                ax.set_ylim(bottom=_num(ss.get("ymin")), top=_num(ss.get("ymax")))
-            ax.set_xlim(0, N + 1)
-            ax.set_xlabel(ss.get("xlabel") or "Number of measurements, n")
-            ax.set_ylabel(ss.get("ylabel") or (f"Running mean of {val}" if mode == "mean" else f"2σ of {val}"))
-            if ss.get("title", True):
-                t = f"Running {what} of randomly drawn {val}"
-                bits = [b for b in [where] + labels if b]
                 ax.set_title(t + ("  |  " + "  |  ".join(bits) if bits else ""), fontsize=rc["font.size"])
-            ax.grid(alpha=0.3)
-            ax.minorticks_on()
-            lg = ss.get("legend", "lower right")
-            has = any(not h.get_label().startswith("_") for h in ax.get_lines())
-            if lg != "off" and has:
-                if lg == "outside":
-                    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=rc["legend.fontsize"],
-                              framealpha=0.9, frameon=True)
-                else:
-                    ax.legend(loc=lg, fontsize=rc["legend.fontsize"], framealpha=0.9, frameon=True)
-            s_n = _settle(run, unit_ref, tol, start, absolute)
-            dev = round(100 * (run[n - 1] - unit_ref) / unit_ref, 1) + 0.0 if unit_ref else np.nan
-            # with a ± tolerance in units, the difference is shown in units too
-            dev_txt = f"{run[n - 1] - unit_ref:+.3g}" if absolute else f"{dev:+.1f}%"
-            readout = (f"n = {n}:  {what} = {run[n - 1]:.3f}  ({dev_txt} from full-data {what})\n"
-                       f"This run stays within {tol_txt} of the full-data {what} from n = {s_n}")
-            settles = []
-            if ghosts:
-                settles = [v for v in (_settle(r, unit_ref, tol, start, absolute) for r in [run] + list(ghosts)) if v is not None]
-            # the readout box shows only the pieces chosen in Look → Readout box
-            first = []
-            if ss.get("rdvalue", True):
-                first.append(f"n = {n}:  {what} = {run[n - 1]:.3f}")
-            if ss.get("rddev", True):
-                first.append(f"({dev_txt} from full-data {what})" if first else f"{dev_txt} from full-data {what}")
-            rows = ["  ".join(first)] if first else []
-            if ss.get("rdfull"):
-                rows.append(f"Full-data {what} = {unit_ref:.3f}")
-            if ss.get("rdN"):
-                rows.append(f"N selected = {N}")
-            if ss.get("rdsettle", True):
-                rows.append(f"This run stays within {tol_txt} of the full-data {what} from n = {s_n}")
-            if ss.get("rdorders") and settles:
-                rows.append(f"{len(settles)} orders: median n = {int(np.median(settles))}, "
-                            f"90th pct = {int(np.percentile(settles, 90))}")
-            if ss.get("readout", True) and rows:
-                pos = ss.get("readoutpos", "upper left")
-                top, right = pos.startswith("upper"), pos.endswith("right")
-                ax.text(0.99 if right else 0.01, 0.98 if top else 0.02, "\n".join(rows), transform=ax.transAxes,
-                        fontsize=_num(ss.get("rdsize")) or rc["legend.fontsize"], va="top" if top else "bottom",
-                        ha="right" if right else "left",
-                        bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=6)
-            msgs.append(readout.replace("\n", "  ·  "))
-            if ghosts:
-                if settles:
-                    msgs.append(f"Across {len(settles)} random orders, n needed to stay within {tol_txt} of the "
-                                f"full-data {what}: median {int(np.median(settles))}, "
-                                f"90th percentile {int(np.percentile(settles, 90))}")
+        ax.grid(alpha=0.3)
+        ax.minorticks_on()
+        lg = ss.get("legend", "lower right")
+        has = any(not h.get_label().startswith("_") for h in ax.get_lines())
+        if lg != "off" and has:
+            if lg == "outside":
+                ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=rc["legend.fontsize"],
+                          framealpha=0.9, frameon=True)
+            else:
+                ax.legend(loc=lg, fontsize=rc["legend.fontsize"], framealpha=0.9, frameon=True).set_in_layout(False)
+        s_n = _settle(run, unit_ref, tol, start, absolute)
+        dev = round(100 * (run[n - 1] - unit_ref) / unit_ref, 1) + 0.0 if unit_ref else np.nan
+        # with a ± tolerance in units, the difference is shown in units too
+        dev_txt = f"{run[n - 1] - unit_ref:+.3g}" if absolute else f"{dev:+.1f}%"
+        readout = (f"n = {n}:  {what} = {run[n - 1]:.3f}  ({dev_txt} from full-data {what})\n"
+                   f"This run stays within {tol_txt} of the full-data {what} from n = {s_n}")
+        settles = []
+        if ghosts:
+            settles = [v for v in (_settle(r, unit_ref, tol, start, absolute) for r in [run] + list(ghosts)) if v is not None]
+        # the readout box shows only the pieces chosen in Look → Readout box
+        first = []
+        if ss.get("rdvalue", True):
+            first.append(f"n = {n}:  {what} = {run[n - 1]:.3f}")
+        if ss.get("rddev", True):
+            first.append(f"({dev_txt} from full-data {what})" if first else f"{dev_txt} from full-data {what}")
+        rows = ["  ".join(first)] if first else []
+        if ss.get("rdfull"):
+            rows.append(f"Full-data {what} = {unit_ref:.3f}")
+        if ss.get("rdN"):
+            rows.append(f"N selected = {N}")
+        if ss.get("rdsettle", True):
+            rows.append(f"This run stays within {tol_txt} of the full-data {what} from n = {s_n}")
+        if ss.get("rdorders") and settles:
+            rows.append(f"{len(settles)} orders: median n = {int(np.median(settles))}, "
+                        f"90th pct = {int(np.percentile(settles, 90))}")
+        if ss.get("readout", True) and rows:
+            pos = ss.get("readoutpos", "upper left")
+            top, right = pos.startswith("upper"), pos.endswith("right")
+            ax.text(0.99 if right else 0.01, 0.98 if top else 0.02, "\n".join(rows), transform=ax.transAxes,
+                    fontsize=_num(ss.get("rdsize")) or rc["legend.fontsize"], va="top" if top else "bottom",
+                    ha="right" if right else "left",
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=6).set_in_layout(False)
+        msgs.append(readout.replace("\n", "  ·  "))
+        if ghosts:
+            if settles:
+                msgs.append(f"Across {len(settles)} random orders, n needed to stay within {tol_txt} of the "
+                            f"full-data {what}: median {int(np.median(settles))}, "
+                            f"90th percentile {int(np.percentile(settles, 90))}")
+    return msgs, {"N": int(N), "Nref": int(len(x_ref)), "n": int(n), "start": start}
+
+
+def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
+    """Running mean or running 2σ of randomly drawn values against the number measured."""
+    c = json.loads(cfg_json)
+    rc = _style(c)
+    L = {**{"size": c.get("ss", {}).get("size", "double")}, **(c.get("sslay") or {})}
+    with plt.rc_context(rc):
+        fig, ax = plt.subplots(figsize=_ss_size(L), layout="constrained")
+        msgs, sizes = _ss_draw(fig, ax, c, rc)
         buf = io.BytesIO()
         md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
-        _cbar_boxes(fig)
         fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
     plt.close(fig)
-    return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs,
-                       "N": int(N), "Nref": int(len(x_ref)), "n": int(n), "start": start})
+    return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": msgs, **sizes})
+
+
+def subsample_layout(payload_json, fmt="png", dpi=150, meta=""):
+    """Several Subsampling plots in one figure: shared size, grid, linked axes, one set of
+    axis titles and panel letters. payload = {base: page settings, layout, panels: [ss…], active}."""
+    P = json.loads(payload_json)
+    base, L, panels = P.get("base", {}), P.get("layout", {}), P.get("panels") or [{}]
+    active = min(int(P.get("active", 0)), len(panels) - 1)
+    n = len(panels)
+    cols = max(1, min(int(_num(L.get("cols")) or math.ceil(math.sqrt(n))), n))
+    rows = math.ceil(n / cols)
+    rc = _style(base)
+    W, H = _ss_size(L)
+    pa = _num(L.get("paspect"))
+    if pa and not _num(L.get("aspect")) and L.get("size") != "custom":
+        H = (W / cols) * pa * rows + 0.4
+    out_msgs, sizes, axes = [], {}, []
+    with plt.rc_context(rc):
+        fig = plt.figure(figsize=(W, H), layout="constrained")
+        sp = _num(L.get("spacing"))
+        fig.get_layout_engine().set(wspace=sp if sp is not None else 0.02, hspace=sp if sp is not None else 0.02)
+        gs = fig.add_gridspec(rows, cols)
+        for i, ss in enumerate(panels):
+            r, col = divmod(i, cols)
+            ax = fig.add_subplot(gs[r, col])
+            ss = dict(ss)
+            lo = L.get("legendon", "first")             # legends repeat across panels: show once by default
+            if lo == "none" or (lo == "first" and i > 0):
+                ss["legend"] = "off"
+            if L.get("readouton") == "none":
+                ss["readout"] = False
+            m, s = _ss_draw(fig, ax, {**base, "ss": ss, "_multi": True}, rc)
+            axes.append((ax, r, col))
+            if i == active:
+                out_msgs, sizes = m, s
+        # linked ranges
+        def share(axis, mode):
+            if mode in (None, "", "none"):
+                return
+            groups = {}
+            for ax, r, col in axes:
+                if not ax.lines:
+                    continue
+                key = "all" if mode == "all" else (r if mode == "row" else col)
+                groups.setdefault(key, []).append(ax)
+            for g in groups.values():
+                lims = [a.get_xlim() if axis == "x" else a.get_ylim() for a in g]
+                lo, hi = min(l[0] for l in lims), max(l[1] for l in lims)
+                for a in g:
+                    (a.set_xlim if axis == "x" else a.set_ylim)(lo, hi)
+        share("x", L.get("sharex"))
+        share("y", L.get("sharey"))
+        occupied = {(r, col) for _, r, col in axes}
+        titles = L.get("titles", "each")
+        xt = [a.get_xlabel() for a, _, _ in axes]
+        yt = [a.get_ylabel() for a, _, _ in axes]
+        for ax, r, col in axes:
+            bottom = (r + 1, col) not in occupied
+            if L.get("inner") == "ticks" or titles == "outer":
+                if not bottom and L.get("inner") == "ticks":
+                    ax.tick_params(labelbottom=False)
+                if col > 0 and L.get("inner") == "ticks":
+                    ax.tick_params(labelleft=False)
+            if titles == "outer":
+                if not bottom:
+                    ax.set_xlabel("")
+                if col > 0:
+                    ax.set_ylabel("")
+            elif titles == "shared":
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+            if L.get("paneltitles") == "off":
+                ax.set_title("")
+        if titles == "shared":
+            fig.supxlabel(L.get("xtitle") or (xt[active] if xt else ""), fontsize=rc["axes.labelsize"])
+            fig.supylabel(L.get("ytitle") or (yt[active] if yt else ""), fontsize=rc["axes.labelsize"])
+        if L.get("labels", "(a)") != "none" and n > 1:
+            for i, (ax, _, _) in enumerate(axes):
+                a = chr(97 + i % 26)
+                txt = {"(a)": f"({a})", "a": a, "a)": f"{a})", "A": a.upper(), "(A)": f"({a.upper()})"}.get(L.get("labels", "(a)"), f"({a})")
+                if L.get("labelpos") == "inside":
+                    ax.text(0.02, 0.97, txt, transform=ax.transAxes, fontweight="bold", va="top", ha="left", zorder=7,
+                            bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.8))
+                else:
+                    ax.text(-0.02, 1.02, txt, transform=ax.transAxes, fontweight="bold", va="bottom", ha="right")
+        buf = io.BytesIO()
+        md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
+        fig.savefig(buf, format=fmt, dpi=dpi, metadata=md)
+        fig.canvas.draw()
+        geoms = []
+        for ax, _, _ in axes:
+            bb = ax.get_position()
+            geoms.append({"x0": bb.x0, "x1": bb.x1, "y0": 1 - bb.y1, "y1": 1 - bb.y0})
+    plt.close(fig)
+    return _dumps({"data": base64.b64encode(buf.getvalue()).decode("ascii"), "msgs": out_msgs, "geoms": geoms,
+                   "active": active, **sizes})
 
 
 def subsample_csv(cfg_json):

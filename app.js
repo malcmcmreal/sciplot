@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 31;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 33;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -827,6 +827,8 @@ function getConfig({ withExcluded = true } = {}) {
   c.allsheets = $('allsheets').checked;
   c.refextra = getRefExtra();
   c.ss = ssConfig();
+  c.sslay = sslayCfg();
+  if (ssMulti()) { ssSync(); c.ssfig = { panels: ssFigure.panels, active: ssFigure.active }; }
   c.view = currentView;
   c.sheetcol = $('sheetcol').value;
   c.calc = getCalc();
@@ -848,7 +850,12 @@ function applyConfig(c, opts = {}) {
   if (c.header) $('header').value = c.header;
   if ('allsheets' in c) $('allsheets').checked = !!c.allsheets;
   if (Array.isArray(c.refextra)) { refPending = c.refextra; if (info) buildRefExtra(); }
+  if (c.sslay) applySSLay(c.sslay);
+  else if (c.ss?.size) applySSLay({ size: c.ss.size });      // older setups kept the size per plot
+  if (c.ssfig?.panels?.length) ssFigure = { panels: c.ssfig.panels, active: Math.min(c.ssfig.active || 0, c.ssfig.panels.length - 1) };
+  else if ('ss' in c) ssFigure = { panels: [null], active: 0 };
   if (c.ss) applySS(c.ss);
+  ssPanelBar();
   if (c.view) setView(c.view);
   if (c.sheetcol) $('sheetcol').value = c.sheetcol;
   if (Array.isArray(c.calc)) { $('calcList').innerHTML = ''; c.calc.forEach((x) => addCalcRow(x)); calcEmptyState(); }
@@ -1475,7 +1482,7 @@ function applySS(o) {
     if (!(k in o) || el.tagName === 'SELECT') return;
     if (el.type === 'checkbox') el.checked = !!o[k]; else el.value = o[k];
   });
-  ['mode', 'size', 'legend', 'readoutpos', 'tolunit'].forEach((k) => {
+  ['mode', 'legend', 'readoutpos', 'tolunit'].forEach((k) => {
     const el = $('ss-' + k);
     if (k in o && [...el.options].some((op) => op.value === String(o[k]))) el.value = o[k];   // ignore stale values
     if (el.value === '' && el.options.length) el.value = el.options[0].value;
@@ -1543,15 +1550,121 @@ function ssBadges() {
   if ($('ss-dmin').value || $('ss-dmax').value) f.push(`Dpar ${$('ss-dmin').value || '…'}–${$('ss-dmax').value || '…'}`);
   set('ssfilt', f.join(' · ') || 'none');
   set('ssrand', `seed ${$('ss-seed').value}${+$('ss-ghosts').value ? ` · ${$('ss-ghosts').value} ghosts` : ''} · ±${$('ss-tol').value}${$('ss-tolunit').value === 'abs' ? '' : '%'}`);
-  set('sslook', $('ss-size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, '') || '');
+  set('sslook', [$('ss-legend').value === 'off' ? 'no legend' : '', $('ss-readout').checked ? '' : 'no readout'].filter(Boolean).join(' · '));
+  set('sslayout', [$('sslay-size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, ''), ssMulti() ? `${ssFigure.panels.length} panels` : ''].filter(Boolean).join(' · '));
 }
+
+// ---------------------------------------------------------------- Subsampling panels
+// Like the Plot tab: each panel keeps its own Subsampling settings; the sidebar edits the active
+// one. Figure size, grid, linked axes and shared titles live in "Figure & panels".
+var ssFigure = { panels: [null], active: 0 };
+function ssMulti() { return !!ssFigure && ssFigure.panels.length > 1; }
+function ssSync() { ssFigure.panels[ssFigure.active] = ssConfig(); }
+function sslayCfg() {
+  const o = {};
+  document.querySelectorAll('[data-sslay]').forEach((el) => { o[el.id.slice(6)] = el.value; });
+  return o;
+}
+function applySSLay(o) {
+  document.querySelectorAll('[data-sslay]').forEach((el) => {
+    const k = el.id.slice(6);
+    if (!(k in o)) return;
+    if (el.tagName === 'SELECT' && ![...el.options].some((op) => op.value === String(o[k]))) return;
+    el.value = o[k];
+  });
+  ssLayVisibility();
+}
+function ssLayVisibility() {
+  $('ssCustomRow').hidden = $('sslay-size').value !== 'custom';
+  $('ssLayMulti').hidden = !ssMulti();
+  $('ssLayHint').hidden = ssMulti();
+  $('ssSharedTitles').hidden = $('sslay-titles').value !== 'shared';
+}
+function ssLetter(i) {
+  const st = $('sslay-labels').value, a = String.fromCharCode(97 + (i % 26)), A = a.toUpperCase();
+  return ({ '(a)': `(${a})`, a, 'a)': `${a})`, A, '(A)': `(${A})` })[st] || `(${a})`;
+}
+function ssPanelBar() {
+  const n = ssFigure.panels.length;
+  $('ssPanelChips').innerHTML = ssFigure.panels.map((p, i) =>
+    `<button type="button" class="chip ${i === ssFigure.active ? 'on' : ''}" data-i="${i}">${ssLetter(i)}</button>`).join('');
+  ['ssPanelLeft', 'ssPanelRight', 'ssPanelRemove'].forEach((id) => { $(id).hidden = n < 2; });
+  $('ssPanelLeft').disabled = ssFigure.active === 0;
+  $('ssPanelRight').disabled = ssFigure.active === n - 1;
+  $('ssEditing').hidden = n < 2;
+  $('ssEditingLabel').textContent = ssLetter(ssFigure.active);
+  ssLayVisibility();
+}
+function ssActivate(i) {
+  if (i === ssFigure.active || i < 0 || i >= ssFigure.panels.length) return;
+  ssSync();
+  ssFigure.active = i;
+  applySS(ssFigure.panels[i]);
+  fillSS();
+  ssVisibility();
+  ssPanelBar();
+  ssSchedule(0);
+}
+function ssCall(fmt, dpi, meta) {
+  if (!ssMulti()) return pyCall(`plotter.subsample_render(_args[0], "${fmt}", ${dpi}, _args[1])`, [JSON.stringify(getConfig()), meta]);
+  ssSync();
+  const base = getConfig({ withExcluded: true });
+  const payload = { base, layout: sslayCfg(), panels: ssFigure.panels.map((p) => ({ ...p })), active: ssFigure.active };
+  payload.panels.forEach((p, i) => { if (i === ssFigure.active) p.n = ssFollow ? 1e9 : +$('ss-n').value; });
+  return pyCall(`plotter.subsample_layout(_args[0], "${fmt}", ${dpi}, _args[1])`, [JSON.stringify(payload), meta]);
+}
+$('ssPanelChips').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (b) ssActivate(+b.dataset.i); });
+$('ssPanelDup').addEventListener('click', () => {
+  if (!info) return;
+  ssSync();
+  const p = JSON.parse(JSON.stringify(ssFigure.panels[ssFigure.active]));
+  ssFigure.panels.splice(ssFigure.active + 1, 0, p);
+  ssFigure.active += 1;
+  ssPanelBar();
+  ssSchedule(0);
+});
+$('ssPanelRemove').addEventListener('click', () => {
+  if (!ssMulti()) return;
+  ssFigure.panels.splice(ssFigure.active, 1);
+  ssFigure.active = Math.min(ssFigure.active, ssFigure.panels.length - 1);
+  applySS(ssFigure.panels[ssFigure.active]);
+  fillSS();
+  ssVisibility();
+  ssPanelBar();
+  ssSchedule(0);
+});
+function ssMove(d) {
+  const i = ssFigure.active, k = i + d;
+  if (k < 0 || k >= ssFigure.panels.length) return;
+  ssSync();
+  [ssFigure.panels[i], ssFigure.panels[k]] = [ssFigure.panels[k], ssFigure.panels[i]];
+  ssFigure.active = k;
+  ssPanelBar();
+  ssSchedule(0);
+}
+$('ssPanelLeft').addEventListener('click', () => ssMove(-1));
+$('ssPanelRight').addEventListener('click', () => ssMove(1));
+document.querySelectorAll('[data-sslay]').forEach((el) => {
+  el.addEventListener(el.type === 'number' || el.type === 'text' ? 'input' : 'change', () => {
+    ssLayVisibility();
+    if (el.id === 'sslay-labels') ssPanelBar();
+    ssSchedule(150);
+  });
+});
+$('ssFig').addEventListener('click', (e) => {          // click a panel to edit it
+  if (!ssMulti() || !ssLast?.geoms) return;
+  const b = e.target.getBoundingClientRect();
+  const fx = (e.clientX - b.left) / b.width, fy = (e.clientY - b.top) / b.height;
+  const hit = ssLast.geoms.findIndex((g) => fx >= g.x0 - 0.03 && fx <= g.x1 + 0.01 && fy >= g.y0 - 0.06 && fy <= g.y1 + 0.05);
+  if (hit >= 0) ssActivate(hit);
+});
 
 function ssSchedule(d = 150) { clearTimeout(ssTimer); ssTimer = setTimeout(ssRender, d); }
 function ssRender() {
   if (!py || !info || currentView !== 'ss') return;
   $('ssErr').textContent = '';
   try {
-    const r = pyCall('plotter.subsample_render(_args[0], "png", 160)', [JSON.stringify(getConfig())]);
+    const r = ssCall('png', 160, '');
     ssLast = r;
     const s = $('ss-n');
     s.min = r.start; s.max = Math.max(r.N, r.start + 1);
@@ -1616,7 +1729,7 @@ document.querySelectorAll('[data-ssexp]').forEach((b) => b.addEventListener('cli
   const fmt = b.dataset.ssexp;
   try {
     const meta = 'SciPlot1:' + b64utf8(JSON.stringify(buildProject({ withData: $('embedData').checked, base64: true }))) + '!';
-    const r = pyCall(`plotter.subsample_render(_args[0], "${fmt}", ${+$('dpi').value}, _args[1])`, [JSON.stringify(getConfig()), meta]);
+    const r = ssCall(fmt, +$('dpi').value, meta);
     const bin = Uint8Array.from(atob(r.data), (ch) => ch.charCodeAt(0));
     const mime = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' }[fmt];
     download(`${baseName()}_running_${$('ss-mode').value}.${fmt}`, new Blob([bin], { type: mime }));
@@ -1633,7 +1746,7 @@ $('ssCsv').addEventListener('click', () => {
 // ---------------------------------------------------------------- panels (multi-panel figures)
 // Each panel keeps its own complete settings; the sidebar edits the active one. Data-level
 // settings (file, header, combined sheets, calculated columns, excluded rows) are shared.
-const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view', 'expname'];
+const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view', 'expname', 'sslay', 'ssfig'];
 const STYLE_KEYS = ['font', 'fontsize', 'theme', 'despine', 'ticks', 'palette', 'markerfill', 'varymarkers',
   'markersize', 'linewidth', 'capsize', 'legendframe', 'minor', 'alpha'];
 var figure = { panels: [null], active: 0 };   // var + function: usable before this point
@@ -1731,7 +1844,7 @@ function movePanel(d) {
   renderPanelBar();
   scheduleRender(0);
 }
-window.sciplotState = () => ({ last, figure });   // read-only peek for debugging/tests
+window.sciplotState = () => ({ last, figure, ssLast, ssFigure });   // read-only peek for debugging/tests
 // a new "Colour by" column gets its own range and label: values set for the previous
 // column (e.g. copied from a duplicated panel) would otherwise squash the new one
 let lastHue = null;
@@ -1799,6 +1912,7 @@ const SEC_KEY = 'sciplot-sections';
 // ---------------------------------------------------------------- start-up
 DEFAULTS = getConfig({ withExcluded: false });
 var LAY_DEFAULTS = layoutCfg();
+ssPanelBar();
 delete DEFAULTS.series;
 delete DEFAULTS.x;
 ['source', 'value', 'anglecol', 'dparcol', 'wherecol', 'whereval'].forEach((k) => delete DEFAULTS.ss[k]);

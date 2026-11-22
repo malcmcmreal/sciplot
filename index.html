@@ -626,6 +626,29 @@
 
   <main class="layout" id="ssView" hidden>
     <aside class="controls">
+      <details class="sec" id="sec-sslayout" open>
+        <summary>Figure &amp; panels <span class="badge" id="b-sslayout"></span></summary>
+        <div class="row"><label for="sslay-size">Figure size</label>
+          <select id="sslay-size" data-sslay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option><option value="custom">Custom…</option></select></div>
+        <div class="row" id="ssCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="number" id="sslay-width" data-sslay value="7.2" min="1" max="30" step="0.1"><input type="number" id="sslay-height" data-sslay value="4" min="0.8" max="30" step="0.1"></div></div>
+        <div class="row"><label for="sslay-aspect" title="Figure height = width × this (blank: from the size)">Height ÷ width</label><input type="number" id="sslay-aspect" data-sslay min="0.1" max="5" step="0.05" placeholder="auto"></div>
+        <p class="hint" id="ssLayHint">One plot. Use <b>+ Duplicate</b> above the plot to add panels, e.g. one per orientation; each keeps its own settings.</p>
+        <div id="ssLayMulti" hidden>
+          <div class="row"><label for="sslay-cols">Columns</label><input type="number" id="sslay-cols" data-sslay min="1" max="20" step="1" placeholder="auto"></div>
+          <div class="row"><label for="sslay-sharex">Same X range</label><select id="sslay-sharex" data-sslay><option value="none">No</option><option value="col">Per column</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
+          <div class="row"><label for="sslay-sharey">Same Y range</label><select id="sslay-sharey" data-sslay><option value="none">No</option><option value="row">Per row</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
+          <div class="row"><label for="sslay-titles">Axis titles</label><select id="sslay-titles" data-sslay><option value="each">On every panel</option><option value="outer">Outer panels only</option><option value="shared">One shared X and Y title</option></select></div>
+          <div class="row" id="ssSharedTitles" hidden><label>Shared X · Y title</label><div class="pair"><input type="text" id="sslay-xtitle" data-sslay placeholder="automatic"><input type="text" id="sslay-ytitle" data-sslay placeholder="automatic"></div></div>
+          <div class="row"><label for="sslay-inner">Inner tick labels</label><select id="sslay-inner" data-sslay><option value="keep">Keep</option><option value="ticks">Hide between panels</option></select></div>
+          <div class="row"><label for="sslay-paneltitles">Panel titles</label><select id="sslay-paneltitles" data-sslay><option value="on">Selection (e.g. Sheet = 10)</option><option value="off">None</option></select></div>
+          <div class="row"><label for="sslay-labels">Panel letters</label><select id="sslay-labels" data-sslay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="A">A</option><option value="(A)">(A)</option><option value="none">None</option></select><select id="sslay-labelpos" data-sslay><option value="outside">outside</option><option value="inside">inside</option></select></div>
+          <div class="row"><label for="sslay-legendon">Legend</label><select id="sslay-legendon" data-sslay><option value="first">First panel only</option><option value="each">Every panel (as set in Look)</option><option value="none">None</option></select></div>
+          <div class="row"><label for="sslay-readouton">Readout boxes</label><select id="sslay-readouton" data-sslay><option value="each">Every panel (as set in Look)</option><option value="none">None</option></select></div>
+          <div class="row"><label for="sslay-spacing">Spacing</label><input type="number" id="sslay-spacing" data-sslay value="0.02" min="0" max="0.3" step="0.01"></div>
+          <p class="hint">Readout boxes and legends can crowd small panels: shrink the readout text or turn items off under Look.</p>
+        </div>
+      </details>
+
       <details class="sec" id="sec-ssdata" open>
         <summary>Data <span class="badge" id="b-ssdata"></span></summary>
         <p class="hint" id="ssNoData">Load data on the <b>Plot</b> tab first; it is shared with this tab (including combined sheets and calculated columns).</p>
@@ -660,8 +683,6 @@
       </details>
       <details class="sec" id="sec-sslook">
         <summary>Look <span class="badge" id="b-sslook"></span></summary>
-        <div class="row"><label for="ss-size">Figure size</label>
-          <select id="ss-size" data-ss><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option></select></div>
         <div class="row"><label for="ss-smooth">Line smoothing</label><input type="number" id="ss-smooth" data-ss value="5" min="1" max="101" step="2"></div>
         <h3 class="subhead">Lines &amp; colours</h3>
         <div class="ss-els">
@@ -737,6 +758,15 @@
     </aside>
     <section class="views">
       <div class="figpanel">
+        <div class="panelbar" id="ssPanelBar">
+          <span class="pb-label">Panels</span>
+          <div class="chips" id="ssPanelChips"></div>
+          <button type="button" id="ssPanelDup" class="ghost small" title="Add a panel that starts as a copy of the active one">+ Duplicate</button>
+          <button type="button" id="ssPanelLeft" class="ghost small" title="Move the active panel earlier" hidden>◀</button>
+          <button type="button" id="ssPanelRight" class="ghost small" title="Move the active panel later" hidden>▶</button>
+          <button type="button" id="ssPanelRemove" class="ghost small" title="Remove the active panel" hidden>Remove</button>
+          <span class="hint" id="ssEditing" hidden>Editing panel <b id="ssEditingLabel"></b>: click a panel to edit it</span>
+        </div>
         <div class="figtools">
           <button type="button" id="ssPlay" class="small">▶ Play</button>
           <label class="inline">n <input type="range" id="ss-n" min="2" max="3" value="3" style="width:min(380px,45vw)"></label>
@@ -767,6 +797,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=42"></script>
+  <script type="module" src="app.js?v=44"></script>
 </body>
 </html>
