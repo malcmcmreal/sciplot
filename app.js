@@ -575,15 +575,19 @@ const MARKER_OPTS = [['auto', 'auto'], ['o', '● circle'], ['s', '■ square'],
   .map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
 
 function seriesBadge(d) {
-  // one-line summary of what's set inside the collapsed "Error bars, fit & style"
+  // one-line summaries of what's set inside the two collapsed boxes
   const b = [];
   if (d.querySelector('.s-yerr').value || d.querySelector('.s-xerr').value) b.push('error bars');
   const fit = +d.querySelector('.s-fit').value;
   if (fit) b.push(['', 'linear', 'quadratic', 'cubic'][fit] + ' fit');
-  if (d.querySelector('.s-color').dataset.set) b.push('colour');
-  if (d.querySelector('.s-marker').value !== 'auto') b.push('marker');
-  if (d.querySelector('.s-size').value || d.querySelector('.s-alpha').value) b.push('size/opacity');
-  d.querySelector('.s-badge').textContent = b.join(' · ');
+  d.querySelector('.s-badge-err').textContent = b.join(' · ');
+  const st = [];
+  const mk = d.querySelector('.s-marker');
+  if (mk.value !== 'auto') st.push(mk.selectedOptions[0]?.textContent.split(' ')[0]);
+  if (d.querySelector('.s-color').dataset.set) st.push('colour');
+  if (d.querySelector('.s-size').value) st.push('size ' + d.querySelector('.s-size').value);
+  if (d.querySelector('.s-alpha').value) st.push('opacity');
+  d.querySelector('.s-badge-style').textContent = st.join(' · ');
 }
 function tableOptions(t, sel, blank) {
   return (blank ? `<option value="">${blank}</option>` : '') +
@@ -604,11 +608,7 @@ function addSeries(s = {}, replace = null) {
     ${src ? `<div class="row s-xrow"><label>X</label><select class="s-x">${opts(s.x)}</select></div>` : ''}
     <div class="row"><label>Y</label><select class="s-y">${s.y === '' ? opts('', '— choose a column —') : opts(s.y)}</select></div>
     <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
-    <details class="s-more"${s.open ? ' open' : ''}><summary>Error bars, fit &amp; style <span class="s-badge"></span></summary>
-    <div class="row s-err"><label>Y error</label><select class="s-yerr">${opts(s.yerr, 'none')}</select></div>
-    <div class="row s-err"><label>X error</label><select class="s-xerr">${opts(s.xerr, 'none')}</select></div>
-    <div class="row s-fitrow"><label>Fit</label><select class="s-fit">
-      <option value="0">None</option><option value="1">Linear</option><option value="2">Quadratic</option><option value="3">Cubic</option></select></div>
+    <details class="s-more s-stylebox"${s.styleopen ? ' open' : ''}><summary>Marker, colour &amp; size <span class="s-badge s-badge-style"></span></summary>
     <div class="row s-look"><label>Colour</label><div class="s-colorwrap">
       <input type="color" class="s-color" value="${s.color || '#000000'}" ${s.color ? 'data-set="1"' : ''}>
       <span class="s-auto">${s.color ? '' : 'from palette'}</span>
@@ -622,6 +622,12 @@ function addSeries(s = {}, replace = null) {
       <div class="row"><label>Size</label><input type="number" class="s-size" step="0.5" min="0.5" placeholder="auto" value="${esc(s.size ?? '')}"></div>
       <div class="row"><label>Opacity</label><input type="number" class="s-alpha" step="0.05" min="0.05" max="1" placeholder="auto" value="${esc(s.alpha ?? '')}"></div>
     </div>
+    </details>
+    <details class="s-more"${s.open ? ' open' : ''}><summary>Error bars &amp; fit <span class="s-badge s-badge-err"></span></summary>
+    <div class="row s-err"><label>Y error</label><select class="s-yerr">${opts(s.yerr, 'none')}</select></div>
+    <div class="row s-err"><label>X error</label><select class="s-xerr">${opts(s.xerr, 'none')}</select></div>
+    <div class="row s-fitrow"><label>Fit</label><select class="s-fit">
+      <option value="0">None</option><option value="1">Linear</option><option value="2">Quadratic</option><option value="3">Cubic</option></select></div>
     </details>`;
   const srcSel = d.querySelector('.s-source');
   if (srcSel) srcSel.addEventListener('change', (e) => {
