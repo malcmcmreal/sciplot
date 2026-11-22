@@ -1931,9 +1931,10 @@ $('ssTabs').addEventListener('click', (e) => {
   if (b) setSSTab(b.dataset.sstt);
 });
 {
-  let t = 'data';
-  try { t = localStorage.getItem(SSTT_KEY) || 'data'; } catch (e) { /* storage unavailable */ }
-  setSSTab(['data', 'draws', 'look', 'figure', 'save'].includes(t) ? t : 'data');
+  let t = 'plotting';
+  try { t = localStorage.getItem(SSTT_KEY) || 'plotting'; } catch (e) { /* storage unavailable */ }
+  t = { data: 'plotting', draws: 'plotting', look: 'appearance', figure: 'appearance' }[t] || t;
+  setSSTab(['plotting', 'appearance', 'save'].includes(t) ? t : 'plotting');
 }
 
 // ---------------------------------------------------------------- sections: remember open / closed
