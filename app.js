@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 33;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 34;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -1563,6 +1563,7 @@ function ssSync() { ssFigure.panels[ssFigure.active] = ssConfig(); }
 function sslayCfg() {
   const o = {};
   document.querySelectorAll('[data-sslay]').forEach((el) => { o[el.id.slice(6)] = el.value; });
+  document.querySelectorAll('[data-sslaychk]').forEach((el) => { o[el.id.slice(6)] = el.checked; });
   return o;
 }
 function applySSLay(o) {
@@ -1572,6 +1573,7 @@ function applySSLay(o) {
     if (el.tagName === 'SELECT' && ![...el.options].some((op) => op.value === String(o[k]))) return;
     el.value = o[k];
   });
+  document.querySelectorAll('[data-sslaychk]').forEach((el) => { const k = el.id.slice(6); if (k in o) el.checked = !!o[k]; });
   ssLayVisibility();
 }
 function ssLayVisibility() {
@@ -1644,6 +1646,26 @@ function ssMove(d) {
 }
 $('ssPanelLeft').addEventListener('click', () => ssMove(-1));
 $('ssPanelRight').addEventListener('click', () => ssMove(1));
+document.querySelectorAll('[data-sslaychk]').forEach((el) => el.addEventListener('change', () => ssSchedule(100)));
+// colour schemes: [running, full-data value, before-filter, ± SD, expected range, ghosts]
+const SS_SCHEMES = {
+  sciplot: ['#7B3294', '#1f77b4', '#D55E00', '#1f77b4', '#808080', '#8c8c8c'],
+  deep: ['#4C72B0', '#DD8452', '#55A868', '#DD8452', '#8C8C8C', '#B0B0B0'],
+  colorblind: ['#0173B2', '#DE8F05', '#029E73', '#DE8F05', '#949494', '#B0B0B0'],
+  muted: ['#4878D0', '#EE854A', '#6ACC64', '#EE854A', '#797979', '#B0B0B0'],
+  bright: ['#023EFF', '#FF7C00', '#1AC938', '#FF7C00', '#A3A3A3', '#C0C0C0'],
+  dark: ['#001C7F', '#B1400D', '#12711C', '#B1400D', '#3C3C3C', '#8C8C8C'],
+  okabe: ['#0072B2', '#E69F00', '#009E73', '#E69F00', '#999999', '#BBBBBB'],
+  grey: ['#000000', '#555555', '#888888', '#555555', '#999999', '#C8C8C8'],
+};
+$('sslay-scheme').addEventListener('change', () => {
+  const s = SS_SCHEMES[$('sslay-scheme').value];
+  $('sslay-scheme').value = '';
+  if (!s) return;
+  [['ss-runcolor', 0], ['ss-linecolor', 0], ['ss-refcolor', 1], ['ss-cutcolor', 2], ['ss-sdcolor', 3], ['ss-funcolor', 4], ['ss-ghostcolor', 5]]
+    .forEach(([id, k]) => { $(id).value = s[k]; });
+  ssSchedule(0);
+});
 document.querySelectorAll('[data-sslay]').forEach((el) => {
   el.addEventListener(el.type === 'number' || el.type === 'text' ? 'input' : 'change', () => {
     ssLayVisibility();

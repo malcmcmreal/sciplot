@@ -2424,6 +2424,21 @@ def _ss_runs(c, x):
     return run, ghosts
 
 
+def _ss_look(c, L):
+    """Page settings with the Subsampling tab's own theme / font size, if set there."""
+    c = dict(c)
+    if L.get("theme"):
+        c["theme"] = L["theme"]
+    if _num(L.get("fontsize")):
+        c["fontsize"] = _num(L.get("fontsize"))
+    return c
+
+
+def _ss_bg(fig, ax, L):
+    if L.get("bgon"):
+        ax.set_facecolor(L.get("bg") or "#ffffff")
+
+
 def _ss_size(L):
     """Figure size (inches) for the Subsampling tab: a preset, or custom W × H; an optional
     height ÷ width overrides the height."""
@@ -2482,11 +2497,11 @@ def _ss_draw(fig, ax, c, rc):
                 ax.axhline(ref + sd, color=sd_col, lw=sd_w, ls=":", zorder=2)
                 ax.axhline(ref - sd, color=sd_col, lw=sd_w, ls=":", zorder=2,
                            label=lab("sd", f"± 1 SD of the data ({sd:.3f})", "± 1 SD of the data"))
-            if cut and len(x_ref) and len(x_ref) != N:
+            if cut and ss.get("showcut", True) and len(x_ref) and len(x_ref) != N:
                 mref = float(x_ref.mean())
                 ax.axhline(mref, color=cut_col, lw=cut_w, ls="-.", zorder=2,
-                           label=lab("cut", f"Mean before the {ss.get('dparcol')} cut ({mref:.3f}, N = {len(x_ref)})",
-                                     f"Mean before the {ss.get('dparcol')} cut"))
+                           label=lab("cut", f"Mean before the {ss.get('dparcol')} filter ({mref:.3f}, N = {len(x_ref)})",
+                                     f"Mean before the {ss.get('dparcol')} filter"))
             if ss.get("funnel", True) and np.isfinite(sd):
                 m = ns
                 fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
@@ -2500,11 +2515,11 @@ def _ss_draw(fig, ax, c, rc):
             ref = float(2 * x.std(ddof=1))
             ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
                        label=lab("ref", f"2σ of all selected data ({ref:.3f}, N = {N})", "2σ of all selected data"))
-            if cut and len(x_ref) > 1 and len(x_ref) != N:
+            if cut and ss.get("showcut", True) and len(x_ref) > 1 and len(x_ref) != N:
                 r0 = float(2 * x_ref.std(ddof=1))
                 ax.axhline(r0, color=cut_col, lw=cut_w, ls="-.", zorder=2,
-                           label=lab("cut", f"2σ before the {ss.get('dparcol')} cut ({r0:.3f}, N = {len(x_ref)})",
-                                     f"2σ before the {ss.get('dparcol')} cut"))
+                           label=lab("cut", f"2σ before the {ss.get('dparcol')} filter ({r0:.3f}, N = {len(x_ref)})",
+                                     f"2σ before the {ss.get('dparcol')} filter"))
             if ss.get("funnel", True):
                 m = ns[1:]
                 fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
@@ -2602,10 +2617,12 @@ def _ss_draw(fig, ax, c, rc):
 def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
     """Running mean or running 2σ of randomly drawn values against the number measured."""
     c = json.loads(cfg_json)
-    rc = _style(c)
     L = {**{"size": c.get("ss", {}).get("size", "double")}, **(c.get("sslay") or {})}
+    c = _ss_look(c, L)
+    rc = _style(c)
     with plt.rc_context(rc):
         fig, ax = plt.subplots(figsize=_ss_size(L), layout="constrained")
+        _ss_bg(fig, ax, L)
         msgs, sizes = _ss_draw(fig, ax, c, rc)
         buf = io.BytesIO()
         md = {META_KEY[fmt]: meta} if meta and fmt in META_KEY else None
@@ -2623,6 +2640,7 @@ def subsample_layout(payload_json, fmt="png", dpi=150, meta=""):
     n = len(panels)
     cols = max(1, min(int(_num(L.get("cols")) or math.ceil(math.sqrt(n))), n))
     rows = math.ceil(n / cols)
+    base = _ss_look(base, L)
     rc = _style(base)
     W, H = _ss_size(L)
     pa = _num(L.get("paspect"))
@@ -2643,6 +2661,7 @@ def subsample_layout(payload_json, fmt="png", dpi=150, meta=""):
                 ss["legend"] = "off"
             if L.get("readouton") == "none":
                 ss["readout"] = False
+            _ss_bg(fig, ax, L)
             m, s = _ss_draw(fig, ax, {**base, "ss": ss, "_multi": True}, rc)
             axes.append((ax, r, col))
             if i == active:

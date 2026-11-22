@@ -102,6 +102,11 @@ It uses the data loaded on the Plot tab, including combined sheets and calculate
 
 **Look → Lines & colours** has one row per figure element: running dots, running line, full-data value, ± 1 SD, expected 95% range, the value before a cut, and ghost runs. Each row sets that element's colour and width (dot size for the dots) and whether it appears in the legend. *Numbers in legend labels* turns the values, N and SD in the labels on or off. The legend can also go outside the plot.
 
+**Figure & panels** (top of the Subsampling sidebar):
+- **Size:** a preset or custom W × H, plus an optional height ÷ width.
+- **Look:** the tab's own theme (or the Plot tab's), a one-click colour scheme (seaborn deep, colorblind, muted, bright, dark, Okabe–Ito, greyscale), a custom plot background and font size.
+- **Panels:** **+ Duplicate** above the plot adds panels (e.g. one per orientation), each with its own settings. Click a panel or its chip to edit it. With several panels you can set columns, same X/Y range, axis titles on every panel / outer panels only / one shared X and Y title, hidden inner tick labels, panel titles, panel letters, the legend on the first panel only, readout boxes on or off, and spacing.
+
 **Tolerance** (Random draws) is either a % of the full-data value or a fixed ± in the tracked value's own units, e.g. ±1 for an angle. *Shade the tolerance band* draws it around the full-data value.
 
 **Look → Readout box** chooses what the box shows: the value at n, the difference from the full data, where the run stays within the tolerance, total N, the full-data value, and a ghost-run summary. It also sets the box's corner and text size.

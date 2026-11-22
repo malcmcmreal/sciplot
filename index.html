@@ -631,6 +631,10 @@
         <div class="row"><label for="sslay-size">Figure size</label>
           <select id="sslay-size" data-sslay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option><option value="custom">Custom…</option></select></div>
         <div class="row" id="ssCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="number" id="sslay-width" data-sslay value="7.2" min="1" max="30" step="0.1"><input type="number" id="sslay-height" data-sslay value="4" min="0.8" max="30" step="0.1"></div></div>
+        <div class="row"><label for="sslay-theme">Theme</label><select id="sslay-theme" data-sslay><option value="">Same as the Plot tab</option><option value="publication">Publication (boxed, inward ticks)</option><option value="ticks">seaborn ticks</option><option value="white">seaborn white</option><option value="whitegrid">seaborn whitegrid</option><option value="darkgrid">seaborn darkgrid</option></select></div>
+        <div class="row"><label for="sslay-scheme" title="Recolour every element at once (you can still change each one under Look)">Colour scheme</label><select id="sslay-scheme"><option value="">Choose to apply…</option><option value="sciplot">SciPlot default (purple / blue)</option><option value="deep">seaborn deep</option><option value="colorblind">seaborn colorblind</option><option value="muted">seaborn muted</option><option value="bright">seaborn bright</option><option value="dark">seaborn dark</option><option value="okabe">Okabe–Ito</option><option value="grey">Greyscale</option></select></div>
+        <div class="row"><label title="Background colour of the plot area (off: the theme's own)">Plot background</label><label class="check inline"><input type="checkbox" id="sslay-bgon" data-sslaychk> custom</label><input type="color" id="sslay-bg" data-sslay value="#f4f4f4"></div>
+        <div class="row"><label for="sslay-fontsize">Font size (pt)</label><input type="number" id="sslay-fontsize" data-sslay min="5" max="24" step="0.5" placeholder="as Plot tab"></div>
         <div class="row"><label for="sslay-aspect" title="Figure height = width × this (blank: from the size)">Height ÷ width</label><input type="number" id="sslay-aspect" data-sslay min="0.1" max="5" step="0.05" placeholder="auto"></div>
         <p class="hint" id="ssLayHint">One plot. Use <b>+ Duplicate</b> above the plot to add panels, e.g. one per orientation; each keeps its own settings.</p>
         <div id="ssLayMulti" hidden>
@@ -718,7 +722,7 @@
             <input type="checkbox" id="ss-lgfun" data-ss checked title="Show in the legend">
           </div>
           <div class="ss-el">
-            <label class="check">Value before the cut</label>
+            <label class="check" title="Drawn when a Dpar range is set under Filters: the value of all rows before that filter"><input type="checkbox" id="ss-showcut" data-ss checked> Before the Dpar filter</label>
             <input type="color" id="ss-cutcolor" data-ss value="#D55E00" title="Colour">
             <input type="number" id="ss-wcut" data-ss value="1.2" min="0.1" max="8" step="0.1" title="Line width (pt)">
             <input type="checkbox" id="ss-lgcut" data-ss checked title="Show in the legend">
@@ -753,7 +757,7 @@
         <div class="row"><label for="ss-xlabel">X label</label><input type="text" id="ss-xlabel" data-ss placeholder="Number of measurements, n"></div>
         <div class="row"><label for="ss-ylabel">Y label</label><input type="text" id="ss-ylabel" data-ss placeholder="automatic"></div>
         <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ss-ymin" data-ss placeholder="min"><input type="text" id="ss-ymax" data-ss placeholder="max"></div></div>
-        <p class="hint">Fonts and theme follow the Figure tab of the Plot view.</p>
+        <p class="hint">Font and (unless set under Figure &amp; panels) theme follow the Figure tab of the Plot view.</p>
       </details>
     </aside>
     <section class="views">
@@ -797,6 +801,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=44"></script>
+  <script type="module" src="app.js?v=45"></script>
 </body>
 </html>
