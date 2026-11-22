@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 35;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 36;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -585,6 +585,7 @@ function seriesBadge(d) {
   const mk = d.querySelector('.s-marker');
   if (mk.value !== 'auto') st.push(mk.selectedOptions[0]?.textContent.split(' ')[0]);
   if (d.querySelector('.s-color').dataset.set) st.push('colour');
+  if (d.querySelector('.s-edge').value || d.querySelector('.s-edgew').value) st.push('outline');
   if (d.querySelector('.s-size').value) st.push('size ' + d.querySelector('.s-size').value);
   if (d.querySelector('.s-alpha').value) st.push('opacity');
   d.querySelector('.s-badge-style').textContent = st.join(' · ');
@@ -610,6 +611,10 @@ function addSeries(s = {}, replace = null) {
     <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
     <details class="s-more s-stylebox"${s.styleopen ? ' open' : ''}><summary>Marker, colour &amp; size <span class="s-badge s-badge-style"></span></summary>
     <div class="row s-markerrow"><label>Marker shape</label><select class="s-marker">${MARKER_OPTS}</select></div>
+    <div class="row s-markerrow s-edgerow"><label>Outline · width</label><select class="s-edge" title="Marker outline (stroke) colour">
+      <option value="">auto</option><option value="series">series colour</option><option value="black">black</option><option value="white">white</option><option value="#555555">grey</option><option value="none">none</option><option value="custom">custom…</option></select>
+      <input type="color" class="s-edgecustom" value="${esc(s.edgecustom || '#000000')}" ${s.edge === 'custom' ? '' : 'hidden'} title="Outline colour">
+      <input type="number" class="s-edgew" step="0.1" min="0" max="6" placeholder="auto" value="${esc(s.edgew ?? '')}" title="Outline width (pt)"></div>
     <div class="row s-look"><label>Colour</label><div class="s-colorwrap">
       <input type="color" class="s-color" value="${s.color || '#000000'}" ${s.color ? 'data-set="1"' : ''}>
       <span class="s-auto">${s.color ? '' : 'from palette'}</span>
@@ -644,6 +649,8 @@ function addSeries(s = {}, replace = null) {
   });
   d.querySelector('.s-fit').value = String(s.fit || 0);
   d.querySelector('.s-marker').value = s.marker || 'auto';
+  d.querySelector('.s-edge').value = s.edge || '';
+  d.querySelector('.s-edge').addEventListener('change', (e) => { d.querySelector('.s-edgecustom').hidden = e.target.value !== 'custom'; });
   d.querySelector('.s-ls').value = s.ls || '-';
   const ci = d.querySelector('.s-color');
   ci.addEventListener('input', () => {
@@ -690,6 +697,9 @@ function seriesFrom(d) {
     fit: +d.querySelector('.s-fit').value,
     color: d.querySelector('.s-color').dataset.set ? d.querySelector('.s-color').value : '',
     marker: d.querySelector('.s-marker').value,
+    edge: d.querySelector('.s-edge').value,
+    edgecustom: d.querySelector('.s-edgecustom').value,
+    edgew: d.querySelector('.s-edgew').value,
     ls: d.querySelector('.s-ls').value,
   });
 }

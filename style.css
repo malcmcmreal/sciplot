@@ -329,3 +329,5 @@ details.sub[open] > summary { margin-bottom: 0.35rem; }
 
 .legend-items { display: grid; gap: 0.15rem; margin-bottom: 0.3rem; }
 .legend-items label { font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series .s-edgerow input[type=color] { width: 2.2rem; flex: 0 0 auto; padding: 0.1rem; }
+.series .s-edgerow input[type=number] { width: 4.2rem; flex: 0 0 auto; }

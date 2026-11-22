@@ -1264,6 +1264,10 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
         alpha_s = _num(s.get("alpha")) or alpha
         mk = s.get("marker") if s.get("marker") not in (None, "", "auto") else \
             (MARKERS[i % len(MARKERS)] if vary_m else "o")
+        # this series' marker outline (stroke): colour and width
+        ed = s.get("edge") or ""
+        s_edge = {"custom": s.get("edgecustom") or "#000000", "series": col, "none": "none"}.get(ed, ed) or None
+        s_edgew = _num(s.get("edgew"))
         ls = LINESTYLES.get(s.get("ls") or "-", "-")
 
         if excl.any() and x_numeric and c.get("showexcluded", True):
@@ -1326,19 +1330,22 @@ def _xy(ax, fig, df, c, series, colors, xcol, msgs, points, extra, groups_out=No
                 gfc = [fc[j] for j in np.flatnonzero(g)]
                 if open_m:
                     ax.scatter(px[g], yd[g], s=sz[g] ** 2, marker=m, facecolors="white",
-                               edgecolors=gfc, linewidths=0.9, alpha=alpha_s, zorder=2)
+                               edgecolors=s_edge or gfc, linewidths=s_edgew if s_edgew is not None else 0.9,
+                               alpha=alpha_s, zorder=2)
                 else:
+                    pe = c.get("edgecolor", "black")
                     ax.scatter(px[g], yd[g], s=sz[g] ** 2, marker=m, c=gfc,
-                               edgecolors=c.get("edgecolor", "black") if c.get("edgecolor", "black") != "none" else "face",
-                               linewidths=0.4, alpha=alpha_s, zorder=2)
+                               edgecolors=s_edge if s_edge else (pe if pe != "none" else "face"),
+                               linewidths=s_edgew if s_edgew is not None else 0.4, alpha=alpha_s, zorder=2)
             # series key (shape + series colour, or grey when colour is mapped)
             hcol = "0.3" if mapping.hue else col
             ax.plot([], [], linestyle="-" if kind == "linemarkers" else "none",
                     marker=None if mapping.style else mk, color=hcol,
                     markerfacecolor="white" if open_m else hcol, markersize=ms_s, label=lbl)
         else:
-            mstyle = dict(marker=mk, markeredgecolor=col, markersize=ms_s,
-                          markerfacecolor="white" if open_m else col, markeredgewidth=0.8)
+            mstyle = dict(marker=mk, markeredgecolor=s_edge or col, markersize=ms_s,
+                          markerfacecolor="white" if open_m else col,
+                          markeredgewidth=s_edgew if s_edgew is not None else 0.8)
             if kind in ("scatter", "polar"):
                 fmt = dict(linestyle="none", **mstyle)
             elif kind == "linemarkers":
