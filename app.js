@@ -1683,9 +1683,17 @@ $('ssFig').addEventListener('click', (e) => {          // click a panel to edit 
   if (hit >= 0) ssActivate(hit);
 });
 
+// Subsampling export name: its own File name box, else the data name + _running_mean / _running_2sd
+function ssBaseName() {
+  const own = $('ssexpname').value.trim().replace(/\.(pdf|svg|png|csv|json)$/i, '').replace(/[\\/:*?"<>|]+/g, '_');
+  return own || `${baseName()}_running_${$('ss-mode').value}`;
+}
+function ssNamePlaceholder() { $('ssexpname').placeholder = `${baseName()}_running_${$('ss-mode').value}`; }
+
 function ssSchedule(d = 150) { clearTimeout(ssTimer); ssTimer = setTimeout(ssRender, d); }
 function ssRender() {
   if (!py || !info || currentView !== 'ss') return;
+  ssNamePlaceholder();
   $('ssErr').textContent = '';
   try {
     const r = ssCall('png', 160, '');
@@ -1756,21 +1764,21 @@ document.querySelectorAll('[data-ssexp]').forEach((b) => b.addEventListener('cli
     const r = ssCall(fmt, +$('dpi').value, meta);
     const bin = Uint8Array.from(atob(r.data), (ch) => ch.charCodeAt(0));
     const mime = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' }[fmt];
-    download(`${baseName()}_running_${$('ss-mode').value}.${fmt}`, new Blob([bin], { type: mime }));
+    download(`${ssBaseName()}.${fmt}`, new Blob([bin], { type: mime }));
   } catch (e) { $('ssErr').textContent = String(e); }
 }));
 $('ssCsv').addEventListener('click', () => {
   try {
     py.globals.set('_args', py.toPy([JSON.stringify(getConfig())]));
     const csv = py.runPython('plotter.subsample_csv(_args[0])');
-    download(`${baseName()}_running_${$('ss-mode').value}.csv`, new Blob([csv], { type: 'text/csv' }));
+    download(`${ssBaseName()}.csv`, new Blob([csv], { type: 'text/csv' }));
   } catch (e) { $('ssErr').textContent = String(e); }
 });
 
 // ---------------------------------------------------------------- panels (multi-panel figures)
 // Each panel keeps its own complete settings; the sidebar edits the active one. Data-level
 // settings (file, header, combined sheets, calculated columns, excluded rows) are shared.
-const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view', 'expname', 'sslay', 'ssfig'];
+const DATA_KEYS = ['header', 'headerrow', 'skipafter', 'allsheets', 'sheetcol', 'calc', 'excluded', 'ss', 'view', 'expname', 'sslay', 'ssfig', 'ssexpname'];
 const STYLE_KEYS = ['font', 'fontsize', 'theme', 'despine', 'ticks', 'palette', 'markerfill', 'varymarkers',
   'markersize', 'linewidth', 'capsize', 'legendframe', 'minor', 'alpha'];
 var figure = { panels: [null], active: 0 };   // var + function: usable before this point
