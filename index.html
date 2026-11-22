@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=28">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -310,11 +310,45 @@
             <div class="row"><label for="groupspread">Error bars</label>
               <select id="groupspread" data-cfg><option value="sd">± 1 SD</option><option value="se">± 1 SE</option><option value="ci95">± 95% CI</option><option value="iqr">Interquartile range</option><option value="range">Min – max</option><option value="none">None</option></select></div>
             <details class="sub" id="subGroup">
-              <summary>Group marker style</summary>
-            <div class="row"><label for="groupcolor">Colour</label>
-              <select id="groupcolor" data-cfg><option value="">White, black outline</option><option value="series">Series colour</option><option value="#BE5103">Orange</option><option value="black">Black</option><option value="#0072B2">Blue</option></select></div>
-            <div class="row"><label for="groupsize">Marker size</label><input type="number" id="groupsize" data-cfg value="7" min="1" step="0.5"></div>
-            <label class="check"><input type="checkbox" id="groupline" data-cfg checked> Join groups with a line</label>
+              <summary>Group points, line &amp; error bars</summary>
+              <h3 class="subhead">Points</h3>
+              <div class="row"><label for="groupcolor">Fill</label><select id="groupcolor" data-cfg><option value="">White</option><option value="series">Series colour</option><option value="black">Black</option><option value="white">White</option><option value="#555555">Grey</option><option value="#BE5103">Orange</option><option value="#0072B2">Blue</option><option value="#D55E00">Red</option><option value="#009E73">Green</option><option value="custom">Custom…</option></select><input type="color" id="groupcustom" data-cfg value="#000000" hidden></div>
+              <div class="row"><label for="groupmarker">Shape · size</label><select id="groupmarker" data-cfg><option value="D">◆ diamond</option><option value="o">● circle</option><option value="s">■ square</option><option value="^">▲ triangle</option><option value="v">▼ triangle</option><option value="*">★ star</option><option value="P">✚ plus</option><option value="X">✖ cross</option></select><input type="number" id="groupsize" data-cfg value="7" min="1" step="0.5" title="Marker size (pt)"></div>
+              <div class="row"><label for="groupedge">Outline · width</label><select id="groupedge" data-cfg><option value="">Black</option><option value="white">White</option><option value="series">Series colour</option><option value="none">None</option><option value="custom">Custom…</option></select><input type="color" id="groupedgecustom" data-cfg value="#000000" hidden><input type="number" id="groupedgew" data-cfg min="0" max="5" step="0.1" placeholder="0.9" title="Outline width (pt)"></div>
+              <div class="row"><label for="groupalpha">Opacity</label><input type="number" id="groupalpha" data-cfg min="0.05" max="1" step="0.05" placeholder="1"></div>
+              <div class="row"><label for="grouphue" title="Colour each group's point by the group's mean of a column">Colour points by</label><select id="grouphue" data-cfg data-col></select></div>
+              <div id="groupHueRows" hidden>
+                <div class="row"><label for="groupcmap">Colour map</label><select id="groupcmap" data-cfg><option value="">Same as Colour tab</option>
+              <optgroup label="Sequential">
+                <option value="viridis">viridis</option><option value="cividis">cividis</option><option value="plasma">plasma</option>
+                <option value="inferno">inferno</option><option value="magma">magma</option>
+                <option value="rocket">rocket</option><option value="rocket_r">rocket (reversed)</option>
+                <option value="mako">mako</option><option value="mako_r">mako (reversed)</option>
+                <option value="flare">flare</option><option value="crest">crest</option>
+                <option value="YlOrRd">YlOrRd</option><option value="Blues">Blues</option><option value="Greys">Greys</option>
+              </optgroup>
+              <optgroup label="Diverging">
+                <option value="vlag">vlag</option><option value="icefire">icefire</option><option value="coolwarm">coolwarm</option>
+                <option value="RdBu_r">RdBu</option><option value="Spectral_r">Spectral</option>
+              </optgroup>
+              <optgroup label="Rainbow (use with care)">
+                <option value="turbo">turbo</option>
+              </optgroup>
+            </select></div>
+                <div class="row"><label>Colour range</label><div class="pair"><input type="text" id="grouphuemin" data-cfg placeholder="min"><input type="text" id="grouphuemax" data-cfg placeholder="max"></div></div>
+                <div class="row"><label for="grouphuelabel">Colour bar label</label><input type="text" id="grouphuelabel" data-cfg placeholder="mean of the column"></div>
+                <label class="check"><input type="checkbox" id="groupcbar" data-cfg checked> Colour bar</label>
+              </div>
+              <h3 class="subhead">Line</h3>
+              <label class="check"><input type="checkbox" id="groupline" data-cfg checked> Join groups with a line</label>
+              <div id="groupLineRows">
+                <div class="row"><label for="grouplinecolor">Colour</label><select id="grouplinecolor" data-cfg><option value="">Automatic</option><option value="series">Series colour</option><option value="black">Black</option><option value="white">White</option><option value="#555555">Grey</option><option value="#BE5103">Orange</option><option value="#0072B2">Blue</option><option value="#D55E00">Red</option><option value="#009E73">Green</option><option value="custom">Custom…</option></select><input type="color" id="grouplinecustom" data-cfg value="#000000" hidden></div>
+                <div class="row"><label for="grouplinew">Width · style</label><input type="number" id="grouplinew" data-cfg min="0.2" max="8" step="0.1" placeholder="1.2"><select id="groupls" data-cfg><option value="-">solid</option><option value="--">dashed</option><option value=":">dotted</option><option value="-.">dash-dot</option></select></div>
+              </div>
+              <h3 class="subhead">Error bars</h3>
+              <div class="row"><label for="grouperrcolor">Colour</label><select id="grouperrcolor" data-cfg><option value="">Black</option><option value="series">Series colour</option><option value="black">Black</option><option value="white">White</option><option value="#555555">Grey</option><option value="#BE5103">Orange</option><option value="#0072B2">Blue</option><option value="#D55E00">Red</option><option value="#009E73">Green</option><option value="custom">Custom…</option></select><input type="color" id="grouperrcustom" data-cfg value="#000000" hidden></div>
+              <div class="row"><label for="grouperrw">Width · caps</label><input type="number" id="grouperrw" data-cfg min="0.2" max="6" step="0.1" placeholder="1"><input type="number" id="groupcap" data-cfg min="0" max="12" step="0.5" placeholder="3" title="Cap size (pt)"></div>
+              <div class="row"><label for="grouplabel">Legend label</label><input type="text" id="grouplabel" data-cfg placeholder="e.g. mean ± 1 SD"></div>
             </details>
             <p class="hint">Uses the main table's series. Group by “X values” gives one point per X (e.g. per grain orientation after combining sheets). The full table can be downloaded under Export.</p>
           </div>
@@ -453,6 +487,11 @@
           <select id="legend" data-cfg><option value="best">Best position (below if it has colour/size/shape keys)</option><option value="upper left">Upper left</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="lower right">Lower right</option><option value="outside">Outside, right</option><option value="below">Below plot</option><option value="off">Off</option></select></div>
         <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
         <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
+        <div id="legendItemsBox" hidden>
+          <h3 class="subhead">Items in the legend</h3>
+          <div id="legendItems" class="legend-items"></div>
+          <p class="hint">Untick to leave an entry out. Entries are matched ignoring their numbers, so a hidden "mean = …" stays hidden when the value changes.</p>
+        </div>
         <div id="legendMultiRows" hidden>
         <h3 class="subhead">Multi-panel figures</h3>
         <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
@@ -823,6 +862,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=47"></script>
+  <script type="module" src="app.js?v=48"></script>
 </body>
 </html>

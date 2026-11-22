@@ -57,6 +57,16 @@ The sidebar opens on Plot once data is loaded and remembers the last tab. The ta
 
 Under **Axes → Titles & labels → Title & axis-title size and position**, each panel can set its own sizes for the title, X title, Y title and tick labels. The title can sit left, centre or right and be bold, the X title left, centre or right, and the Y title bottom, middle or top, on the left or right side. Each has a gap (in pt) that moves it closer to or further from the plot.
 
+## Group summaries and the legend
+
+**Stats → Group summary → Group points, line & error bars** styles the mean/median points:
+- **Points:** fill (series colour, presets or custom), shape and size, outline colour and width, and opacity. **Colour points by** a column colours each group's point by the group's mean of it, with its own colour map, range and colour bar.
+- **Line:** whether to join the points, plus the line's colour, width and style.
+- **Error bars:** colour, width and cap size.
+- **Legend label:** custom text for the group entry.
+
+**Colour → Legend → Items in the legend** lists every entry of the active panel; untick one to leave it out. Entries are matched ignoring their numbers, so a hidden "mean = …" stays hidden when the data change.
+
 ## Calculated columns
 
 The **Calculated columns** panel sits under the figure, above the data table. Each column has a name and a formula, and shows its result as you type (count, mean and range, or the error). Columns can be moved up or down (a formula can use columns above it), duplicated or removed. They appear in every column menu and in the data table (orange headings), and are saved with the plot.

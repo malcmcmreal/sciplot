@@ -11,6 +11,7 @@ import io
 import csv
 import json
 import math
+import re
 import base64
 
 import numpy as np
@@ -1155,20 +1156,63 @@ def _group_summary(ax, df, c, x, y, xc, x_numeric, col, prefix, tx, msgs, out):
     lo = np.array([r["lo"] for r in rows])
     hi = np.array([r["hi"] for r in rows])
     yerr = None if spread == "none" else np.vstack([np.nan_to_num(gy - lo), np.nan_to_num(hi - gy)])
-    gc = c.get("groupcolor") or ""
-    gcolr = col if gc == "series" else (gc or "white")   # white markers read on any cloud of points
-    lcol = col if gc == "series" else (gc or "black")
+    def pick(v, custom, series_col, default):
+        v = v or ""
+        if v == "custom":
+            return custom or default
+        if v == "series":
+            return series_col
+        return v or default
+    gcolr = pick(c.get("groupcolor"), c.get("groupcustom"), col, "white")   # white reads on any cloud
+    edge = pick(c.get("groupedge"), c.get("groupedgecustom"), col, "black")
+    edge = "none" if edge == "none" else edge
+    lcol = pick(c.get("grouplinecolor"), c.get("grouplinecustom"), col,
+                col if c.get("groupcolor") == "series" else (gcolr if gcolr not in ("white", "#ffffff") else "black"))
+    ecol = pick(c.get("grouperrcolor"), c.get("grouperrcustom"), col, "black")
     ms = _num(c.get("groupsize")) or (c.get("markersize", 4) * 1.8)
+    mk = c.get("groupmarker") or "D"
+    ew = _num(c.get("groupedgew"))
+    ew = 0.9 if ew is None else ew
+    lw = _num(c.get("grouplinew")) or 1.2
+    ls = LINESTYLES.get(c.get("groupls") or "-", "-")
+    galpha = _num(c.get("groupalpha")) or 1.0
     names = {"sd": "± 1 SD", "se": "± 1 SE", "ci95": "± 95% CI", "iqr": "(IQR)", "range": "(range)", "none": ""}
     label = f"{prefix + ': ' if prefix else ''}{stat} {names[spread]}".strip()
     px = tx(np.asarray(gx, float)) if x_numeric else gx
-    ax.errorbar(px, gy, yerr=yerr, fmt="-" if c.get("groupline", True) else "none",
-                color=lcol, ecolor="black", elinewidth=1.0, capsize=3, linewidth=1.2, zorder=5)
-    ax.plot(px, gy, linestyle="none", marker=c.get("groupmarker", "D"), markersize=ms,
-            markerfacecolor=gcolr, markeredgecolor="black", markeredgewidth=0.9, zorder=6)
-    ax.plot([], [], linestyle="-" if c.get("groupline", True) else "none", color=lcol,
-            marker=c.get("groupmarker", "D"), markersize=min(ms, 7), markerfacecolor=gcolr,
-            markeredgecolor="black", markeredgewidth=0.9, label=label)     # legend key
+    line_on = c.get("groupline", True)
+    if line_on:
+        ax.plot(px, gy, linestyle=ls, color=lcol, linewidth=lw, zorder=5, alpha=galpha)
+    if yerr is not None:
+        ax.errorbar(px, gy, yerr=yerr, fmt="none", ecolor=ecol, elinewidth=_num(c.get("grouperrw")) or 1.0,
+                    capsize=_num(c.get("groupcap")) if _num(c.get("groupcap")) is not None else 3, zorder=5)
+    # colour each group's point by a column (the group's mean of it)
+    hcol = c.get("grouphue")
+    face = gcolr
+    if _ok(hcol) and hcol in df.columns:
+        hv = pd.to_numeric(df[hcol], errors="coerce")
+        means = []
+        for r in rows:
+            sel = np.asarray(keys.values == r["group"])
+            means.append(float(np.nanmean(hv.loc[y.index].values[sel])) if sel.any() else np.nan)
+        means = np.array(means)
+        fin = means[np.isfinite(means)]
+        if len(fin):
+            lo_, hi_ = _num(c.get("grouphuemin")), _num(c.get("grouphuemax"))
+            norm = matplotlib.colors.Normalize(lo_ if lo_ is not None else fin.min(),
+                                               hi_ if hi_ is not None else (fin.max() if fin.max() > fin.min() else fin.min() + 1))
+            cmap = plt.get_cmap(c.get("groupcmap") or c.get("cmap") or "viridis")
+            face = [cmap(norm(v)) if np.isfinite(v) else (0.8, 0.8, 0.8, 1) for v in means]
+            for r, v in zip(rows, means):
+                r[f"mean {hcol}"] = v
+            if c.get("groupcbar", True):
+                sm = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+                cb = _colorbar(ax.figure, ax, sm, {**c, "cbarlen": c.get("cbarlen")})
+                cb.set_label(c.get("grouphuelabel") or f"mean {hcol}")
+    ax.scatter(px, gy, marker=mk, s=ms ** 2, c=face if isinstance(face, list) else [face] * len(gy),
+               edgecolors=edge, linewidths=ew, zorder=6, alpha=galpha)
+    ax.plot([], [], linestyle=ls if line_on else "none", color=lcol, linewidth=lw,
+            marker=mk, markersize=min(ms, 7), markerfacecolor=gcolr if not isinstance(face, list) else "0.7",
+            markeredgecolor=edge, markeredgewidth=ew, label=c.get("grouplabel") or label)     # legend key
     for r in rows:
         r["series"] = prefix or ""
         r["groupby"] = gcol or "row"
@@ -1542,6 +1586,12 @@ def _distribution(ax, df, c, series, colors, xcol, msgs):
     ax.set_xlabel("")
 
 
+def _legkey(label):
+    """A legend entry's identity, ignoring the numbers in it (so a hidden "mean = 1.42" stays
+    hidden when the value changes)."""
+    return re.sub(r"[-+−]?\d[\d.,]*(?:[eE][-+]?\d+)?", "#", str(label)).strip()
+
+
 def _legend(fig, ax, c, series, extra):
     leg = c.get("legend", "best")
     h, l = ax.get_legend_handles_labels()
@@ -1564,6 +1614,12 @@ def _legend(fig, ax, c, series, extra):
             leg = "best"
     h += [e[0] for e in extra]
     l += [e[1] for e in extra]
+    # every entry is offered under Colour → Legend → Items; unticked ones are left out
+    ax._sp_legend_items = list(dict.fromkeys(l))
+    hide = set(c.get("legendhide") or [])
+    if hide:
+        keep = [k for k, ll in enumerate(l) if _legkey(ll) not in hide]
+        h, l = [h[k] for k in keep], [l[k] for k in keep]
     if c.get("_multi") and leg in ("below", "outside") or (c.get("_multi") and leg == "best" and (extra or ax.name == "polar")):
         if not h:
             return
@@ -1879,6 +1935,11 @@ def _geometry(fig, ax, points=None, draw=True):
 META_KEY = {"png": "SciPlot", "svg": "Description", "pdf": "Subject"}
 
 
+def _legend_items(ax):
+    items = getattr(ax, "_sp_legend_items", None) or []
+    return [{"label": l, "key": _legkey(l)} for l in items if l and not l.startswith("_")]
+
+
 def render(cfg_json, fmt="png", dpi=200, meta=""):
     """Render the figure; returns JSON {data (base64), msgs, geom, points, colors, swatches}.
     `meta` (the plot setup, "SciPlot1:<base64>!") is embedded in the file's metadata so an
@@ -1899,6 +1960,7 @@ def render(cfg_json, fmt="png", dpi=200, meta=""):
                        "geom": geom, "points": points,
                        "colors": [s.get("color") or pal[i] for i, s in enumerate(c.get("series", []))],
                        "swatches": _colors(c.get("palette", "okabe-ito"), 8),
+                       "legend_items": _legend_items(fig.axes[0]),
                        "ngroups": len(DATA.get("groups") or [])})
 
 
@@ -2017,9 +2079,12 @@ def _shared_key(fig, axes, mode, base):
     """One legend and one colour bar per mapped variable for the whole figure."""
     seen, H, L = set(), [], []
     head = ""
+    hide = set(base.get("legendhide") or [])
     for ax in axes:
         head, gi = "", 0
         for h, l in getattr(ax, "_sp_keys", []):
+            if _legkey(l) in hide:
+                continue
             if isinstance(h, Rectangle):          # a group title (colour by …, size by …, shape by …)
                 head, gi = l, gi + 1
             key = (gi, head, l)
@@ -2314,6 +2379,7 @@ def render_layout(payload_json, fmt="png", dpi=200, meta=""):
                    "rows": rows, "cols": cols, "active": active,
                    "colors": [s.get("color") or pal[k] for k, s in enumerate(act.get("series", []))],
                    "swatches": _colors(act.get("palette", "okabe-ito"), 8),
+                   "legend_items": _legend_items(cells[active][0]) if cells else [],
                    "ngroups": len(groups)})
 
 

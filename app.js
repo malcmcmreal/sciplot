@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 34;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 35;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -752,6 +752,10 @@ function updateVisibility() {
   $('refcustom').hidden = $('refcolor').value !== 'custom';
   $('kdeLineRows').hidden = !(($('kind').value === 'hist' && $('histkde').checked) || $('kind').value === 'kde');
   $('kdecustom').hidden = $('kdecolor').value !== 'custom';
+  [['groupcolor', 'groupcustom'], ['groupedge', 'groupedgecustom'], ['grouplinecolor', 'grouplinecustom'], ['grouperrcolor', 'grouperrcustom']]
+    .forEach(([s, p]) => { $(p).hidden = $(s).value !== 'custom'; });
+  $('groupHueRows').hidden = !$('grouphue').value;
+  $('groupLineRows').hidden = !$('groupline').checked;
   const mp = multi();
   $('size').closest('.row').hidden = mp;              // one panel: Figure size; several: the grid's size
   $('customSize').hidden = mp || $('size').value !== 'custom';
@@ -826,6 +830,7 @@ function getConfig({ withExcluded = true } = {}) {
   c.header = $('header').value;
   c.allsheets = $('allsheets').checked;
   c.refextra = getRefExtra();
+  c.legendhide = [...legendHide];
   c.ss = ssConfig();
   c.sslay = sslayCfg();
   if (ssMulti()) { ssSync(); c.ssfig = { panels: ssFigure.panels, active: ssFigure.active }; }
@@ -850,6 +855,7 @@ function applyConfig(c, opts = {}) {
   if (c.header) $('header').value = c.header;
   if ('allsheets' in c) $('allsheets').checked = !!c.allsheets;
   if (Array.isArray(c.refextra)) { refPending = c.refextra; if (info) buildRefExtra(); }
+  legendHide = new Set(Array.isArray(c.legendhide) ? c.legendhide : []);
   if (c.sslay) applySSLay(c.sslay);
   else if (c.ss?.size) applySSLay({ size: c.ss.size });      // older setups kept the size per plot
   if (c.ssfig?.panels?.length) ssFigure = { panels: c.ssfig.panels, active: Math.min(c.ssfig.active || 0, c.ssfig.panels.length - 1) };
@@ -965,6 +971,7 @@ function renderPreview() {
       r = pyRender(cfg, 'png', PREVIEW_DPI);
       last = { geom: r.geom, points: r.points, kind: cfg.kind };
     }
+    buildLegendItems(r.legend_items);
     const img = $('fig');
     img.onload = () => {
       // show at roughly 1.6× physical size, capped by the panel width
@@ -1689,6 +1696,24 @@ function ssBaseName() {
   return own || `${baseName()}_running_${$('ss-mode').value}`;
 }
 function ssNamePlaceholder() { $('ssexpname').placeholder = `${baseName()}_running_${$('ss-mode').value}`; }
+
+// legend entries the user has unticked (Colour → Legend → Items in the legend)
+var legendHide = new Set();
+function buildLegendItems(items) {
+  const seen = new Set();
+  const list = (items || []).filter((it) => !seen.has(it.key) && seen.add(it.key));
+  // keep hidden entries listed so they can be ticked back on
+  [...legendHide].forEach((k) => { if (!seen.has(k)) list.push({ label: k.replace(/#/g, '…'), key: k }); });
+  $('legendItemsBox').hidden = !list.length;
+  $('legendItems').innerHTML = list.map((it) =>
+    `<label class="check" title="${esc(it.label)}"><input type="checkbox" data-key="${esc(it.key)}" ${legendHide.has(it.key) ? '' : 'checked'}> ${esc(it.label)}</label>`).join('');
+}
+$('legendItems').addEventListener('change', (e) => {
+  const k = e.target.dataset.key;
+  if (!k) return;
+  if (e.target.checked) legendHide.delete(k); else legendHide.add(k);
+  scheduleRender(0);
+});
 
 function ssSchedule(d = 150) { clearTimeout(ssTimer); ssTimer = setTimeout(ssRender, d); }
 function ssRender() {
