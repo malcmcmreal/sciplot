@@ -1089,7 +1089,8 @@ def _vectors(ax, px, y, idx, df, c, mapping, col, alpha):
     else:                                                   # from the point outwards
         segs = np.stack([np.c_[np.zeros(n), np.zeros(n)], np.c_[ux, uy]], axis=1)
     cols = mapping.colors_for(idx, col) if (mapping is not None and mapping.hue) else [col] * n
-    pts_to_px = matplotlib.transforms.Affine2D().scale(ax.figure.dpi / 72.0)
+    # points -> inches -> pixels, resolved at draw time: the same physical length on screen, PNG and PDF
+    pts_to_px = matplotlib.transforms.Affine2D().scale(1 / 72.0) + ax.figure.dpi_scale_trans
     lc = matplotlib.collections.LineCollection(
         segs, offsets=np.c_[np.asarray(px, float), np.asarray(y, float)], offset_transform=ax.transData,
         transform=pts_to_px, colors=cols, linewidths=_num(c.get("vecwidth")) or 1.2,
