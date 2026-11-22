@@ -609,12 +609,12 @@ function addSeries(s = {}, replace = null) {
     <div class="row"><label>Y</label><select class="s-y">${s.y === '' ? opts('', '— choose a column —') : opts(s.y)}</select></div>
     <div class="row"><label>Label</label><input type="text" class="s-label" placeholder="column name" value="${esc(s.label || '')}"></div>
     <details class="s-more s-stylebox"${s.styleopen ? ' open' : ''}><summary>Marker, colour &amp; size <span class="s-badge s-badge-style"></span></summary>
+    <div class="row s-markerrow"><label>Marker shape</label><select class="s-marker">${MARKER_OPTS}</select></div>
     <div class="row s-look"><label>Colour</label><div class="s-colorwrap">
       <input type="color" class="s-color" value="${s.color || '#000000'}" ${s.color ? 'data-set="1"' : ''}>
       <span class="s-auto">${s.color ? '' : 'from palette'}</span>
       <button type="button" class="s-colorreset" ${s.color ? '' : 'hidden'}>reset</button></div></div>
     <div class="row2 s-look">
-      <div class="row s-markerrow"><label>Marker</label><select class="s-marker">${MARKER_OPTS}</select></div>
       <div class="row s-lsrow"><label>Line</label><select class="s-ls">
         <option value="-">solid</option><option value="--">dashed</option><option value=":">dotted</option><option value="-.">dash-dot</option></select></div>
     </div>
@@ -801,7 +801,8 @@ function updateVisibility() {
   $('vlinesRow').hidden = CATEGORICAL.has(k);
   $('oneoneRow').hidden = !xy || polar;
   document.querySelectorAll('.series .s-look').forEach((el) => { el.hidden = GROUPED.has(k) || k === 'kde'; });
-  document.querySelectorAll('.series .s-markerrow').forEach((el) => { el.hidden = !(k === 'scatter' || k === 'linemarkers' || polar) || $('vector').checked; });
+  // marker shape: shown for every plot type that draws markers (even with vectors on, so it is never lost)
+  document.querySelectorAll('.series .s-markerrow').forEach((el) => { el.hidden = !(k === 'scatter' || k === 'linemarkers' || polar); });
   document.querySelectorAll('.series .s-lsrow').forEach((el) => { el.hidden = !(k === 'line' || k === 'linemarkers' || k === 'step'); });
   // collapse the series "more" box away when nothing inside applies to this plot type
   document.querySelectorAll('.series .s-more').forEach((m) => {
