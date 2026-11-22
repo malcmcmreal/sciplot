@@ -1,7 +1,7 @@
 // SciPlot front end. All plotting happens in plotter.py (matplotlib via Pyodide);
 // this file handles the controls, file loading and the interactive overlay.
 
-const PY_VERSION = 30;          // bump with ?v= in index.html when plotter.py changes
+const PY_VERSION = 31;          // bump with ?v= in index.html when plotter.py changes
 const PREVIEW_DPI = 200;
 const LS_KEY = 'sciplot-settings';
 
@@ -1475,7 +1475,7 @@ function applySS(o) {
     if (!(k in o) || el.tagName === 'SELECT') return;
     if (el.type === 'checkbox') el.checked = !!o[k]; else el.value = o[k];
   });
-  ['mode', 'size', 'legend', 'readoutpos'].forEach((k) => {
+  ['mode', 'size', 'legend', 'readoutpos', 'tolunit'].forEach((k) => {
     const el = $('ss-' + k);
     if (k in o && [...el.options].some((op) => op.value === String(o[k]))) el.value = o[k];   // ignore stale values
     if (el.value === '' && el.options.length) el.value = el.options[0].value;
@@ -1542,7 +1542,7 @@ function ssBadges() {
   if ($('ss-amin').value || $('ss-amax').value) f.push(`angle ${$('ss-amin').value || '…'}–${$('ss-amax').value || '…'}`);
   if ($('ss-dmin').value || $('ss-dmax').value) f.push(`Dpar ${$('ss-dmin').value || '…'}–${$('ss-dmax').value || '…'}`);
   set('ssfilt', f.join(' · ') || 'none');
-  set('ssrand', `seed ${$('ss-seed').value}${+$('ss-ghosts').value ? ` · ${$('ss-ghosts').value} ghosts` : ''} · ±${$('ss-tol').value}%`);
+  set('ssrand', `seed ${$('ss-seed').value}${+$('ss-ghosts').value ? ` · ${$('ss-ghosts').value} ghosts` : ''} · ±${$('ss-tol').value}${$('ss-tolunit').value === 'abs' ? '' : '%'}`);
   set('sslook', $('ss-size').selectedOptions[0]?.textContent.replace(/ \(.*\)/, '') || '');
 }
 
@@ -1571,7 +1571,7 @@ function ssRender() {
 document.querySelectorAll('[data-ss]').forEach((el) => {
   el.addEventListener(el.type === 'text' || el.type === 'number' ? 'input' : 'change', () => {
     const k = el.id.slice(3);
-    if (k === 'tol') ssTolTouched = true;
+    if (k === 'tol' || k === 'tolunit') ssTolTouched = true;
     if (el.tagName === 'SELECT') ssTouched.add(k);
     if (k === 'source') { fillSS({ ...ssConfig(), value: undefined, wherecol: undefined, whereval: undefined }); }
     if (k === 'wherecol') fillWhereVals();
@@ -1580,7 +1580,7 @@ document.querySelectorAll('[data-ss]').forEach((el) => {
       const nums = t.columns.filter((c, i) => t.numeric[i]);
       const d = nums.find((c) => (SS_DEFAULT[el.value] || SS_DEFAULT.mean).test(c));
       if (d) $('ss-value').value = d;
-      if (!ssTolTouched) $('ss-tol').value = el.value === 'mean' ? 2 : 10;
+      if (!ssTolTouched && $('ss-tolunit').value === 'pct') $('ss-tol').value = el.value === 'mean' ? 2 : 10;
       ssVisibility();
     }
     if (k === 'readout') ssVisibility();

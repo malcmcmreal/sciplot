@@ -2350,13 +2350,15 @@ def _smooth(v, w):
         return num / den
 
 
-def _settle(run, ref, tol, start):
-    """Smallest n after which the running value stays within ±tol (fraction) of ref.
-    run[k] belongs to n = k + 1; values before n = start are ignored."""
-    if len(run) < start or not np.isfinite(ref) or ref == 0:
+def _settle(run, ref, tol, start, absolute=False):
+    """Smallest n after which the running value stays within ±tol of ref: tol is a fraction of
+    ref, or (absolute) a value in the data's own units. run[k] belongs to n = k + 1; values
+    before n = start are ignored."""
+    if len(run) < start or not np.isfinite(ref) or (ref == 0 and not absolute):
         return None
     seg = run[start - 1:]
-    out = np.where(~(np.abs(seg - ref) <= tol * abs(ref)))[0]
+    band = tol if absolute else tol * abs(ref)
+    out = np.where(~(np.abs(seg - ref) <= band))[0]
     return start if len(out) == 0 else int(out[-1] + start + 1)
 
 
@@ -2432,7 +2434,11 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
     start = 1 if mode == "mean" else 2
     n = int(_num(ss.get("n")) or N)
     n = max(min(n, N), start) if N else 0
-    tol = (_num(ss.get("tol")) or (2.0 if mode == "mean" else 10.0)) / 100
+    absolute = ss.get("tolunit") == "abs"            # ± in the tracked value's own units
+    tol = _num(ss.get("tol")) or (2.0 if mode == "mean" else 10.0)
+    if not absolute:
+        tol /= 100
+    tol_txt = f"±{tol:g}" if absolute else f"±{tol * 100:g}%"
     msgs = []
     size = SS_SIZES.get(ss.get("size", "double"), SS_SIZES["double"])
     rc = _style(c)
@@ -2498,6 +2504,10 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
                     ax.plot(m, np.clip(ref - half, 0, None), "--", color=fun_col, lw=fun_w, zorder=2,
                             label=lab("fun", "Expected 95% spread of 2σ (normal approx.)", "Expected 95% spread of 2σ"))
                 what, unit_ref = "2σ", ref
+            if ss.get("tolband"):
+                band = tol if absolute else tol * abs(ref)
+                ax.axhspan(ref - band, ref + band, color=ss.get("refcolor") or "#1f77b4", alpha=0.12, lw=0, zorder=1,
+                           label=lab("band", f"Tolerance {tol_txt}", "Tolerance band"))
             lo_i = start - 1
             for gi, g in enumerate(ghosts):
                 ax.plot(ns[lo_i:n], g[lo_i:n], color=gh_col, alpha=0.25, lw=gh_w, zorder=1,
@@ -2536,26 +2546,28 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
                               framealpha=0.9, frameon=True)
                 else:
                     ax.legend(loc=lg, fontsize=rc["legend.fontsize"], framealpha=0.9, frameon=True)
-            s_n = _settle(run, unit_ref, tol, start)
+            s_n = _settle(run, unit_ref, tol, start, absolute)
             dev = round(100 * (run[n - 1] - unit_ref) / unit_ref, 1) + 0.0 if unit_ref else np.nan
-            readout = (f"n = {n}:  {what} = {run[n - 1]:.3f}  ({dev:+.1f}% from full-data {what})\n"
-                       f"This run stays within ±{tol * 100:g}% of the full-data {what} from n = {s_n}")
+            # with a ± tolerance in units, the difference is shown in units too
+            dev_txt = f"{run[n - 1] - unit_ref:+.3g}" if absolute else f"{dev:+.1f}%"
+            readout = (f"n = {n}:  {what} = {run[n - 1]:.3f}  ({dev_txt} from full-data {what})\n"
+                       f"This run stays within {tol_txt} of the full-data {what} from n = {s_n}")
             settles = []
             if ghosts:
-                settles = [v for v in (_settle(r, unit_ref, tol, start) for r in [run] + list(ghosts)) if v is not None]
+                settles = [v for v in (_settle(r, unit_ref, tol, start, absolute) for r in [run] + list(ghosts)) if v is not None]
             # the readout box shows only the pieces chosen in Look → Readout box
             first = []
             if ss.get("rdvalue", True):
                 first.append(f"n = {n}:  {what} = {run[n - 1]:.3f}")
             if ss.get("rddev", True):
-                first.append(f"({dev:+.1f}% from full-data {what})" if first else f"{dev:+.1f}% from full-data {what}")
+                first.append(f"({dev_txt} from full-data {what})" if first else f"{dev_txt} from full-data {what}")
             rows = ["  ".join(first)] if first else []
             if ss.get("rdfull"):
                 rows.append(f"Full-data {what} = {unit_ref:.3f}")
             if ss.get("rdN"):
                 rows.append(f"N selected = {N}")
             if ss.get("rdsettle", True):
-                rows.append(f"This run stays within ±{tol * 100:g}% of the full-data {what} from n = {s_n}")
+                rows.append(f"This run stays within {tol_txt} of the full-data {what} from n = {s_n}")
             if ss.get("rdorders") and settles:
                 rows.append(f"{len(settles)} orders: median n = {int(np.median(settles))}, "
                             f"90th pct = {int(np.percentile(settles, 90))}")
@@ -2569,7 +2581,7 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
             msgs.append(readout.replace("\n", "  ·  "))
             if ghosts:
                 if settles:
-                    msgs.append(f"Across {len(settles)} random orders, n needed to stay within ±{tol * 100:g}% of the "
+                    msgs.append(f"Across {len(settles)} random orders, n needed to stay within {tol_txt} of the "
                                 f"full-data {what}: median {int(np.median(settles))}, "
                                 f"90th percentile {int(np.percentile(settles, 90))}")
         buf = io.BytesIO()

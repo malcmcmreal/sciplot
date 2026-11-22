@@ -653,7 +653,8 @@
         <summary>Random draws <span class="badge" id="b-ssrand"></span></summary>
         <div class="row"><label for="ss-seed">Seed</label><input type="number" id="ss-seed" data-ss value="1" step="1"><button type="button" id="ssNewOrder" class="ghost small">New random order</button></div>
         <div class="row"><label for="ss-ghosts">Ghost runs</label><input type="number" id="ss-ghosts" data-ss value="0" min="0" max="200" step="1" title="Other random orders drawn faintly; also gives the median and 90th-percentile n"></div>
-        <div class="row"><label for="ss-tol">Tolerance ±%</label><input type="number" id="ss-tol" data-ss value="2" min="0.1" step="0.5" title="'Stays within' readout: % of the full-data value"></div>
+        <div class="row"><label for="ss-tol">Tolerance ±</label><input type="number" id="ss-tol" data-ss value="2" min="0" step="any" title="How close the running value must stay to the full-data value for the 'stays within' readout"><select id="ss-tolunit" data-ss title="Percent of the full-data value, or a fixed ± in the tracked value's own units"><option value="pct">% of value</option><option value="abs">units (±)</option></select></div>
+        <label class="check"><input type="checkbox" id="ss-tolband" data-ss> Shade the tolerance band</label>
         <label class="check"><input type="checkbox" id="ss-funnel" data-ss checked> Expected 95% spread (dashed)</label>
         <label class="check" id="ssSdRow"><input type="checkbox" id="ss-sdlines" data-ss checked> ± 1 SD of the data (dotted)</label>
       </details>
@@ -717,7 +718,7 @@
         <div id="ssReadoutOpts">
           <div class="checks4">
             <label class="check"><input type="checkbox" id="ss-rdvalue" data-ss checked> Value at n</label>
-            <label class="check"><input type="checkbox" id="ss-rddev" data-ss checked> % from full data</label>
+            <label class="check"><input type="checkbox" id="ss-rddev" data-ss checked> Difference from full data</label>
             <label class="check"><input type="checkbox" id="ss-rdsettle" data-ss checked> Stays within ±tol from n =</label>
             <label class="check"><input type="checkbox" id="ss-rdN" data-ss> Total N selected</label>
             <label class="check"><input type="checkbox" id="ss-rdfull" data-ss> Full-data value</label>
@@ -766,6 +767,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=41"></script>
+  <script type="module" src="app.js?v=42"></script>
 </body>
 </html>
