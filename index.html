@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -662,20 +662,76 @@
         <div class="row"><label for="ss-size">Figure size</label>
           <select id="ss-size" data-ss><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option></select></div>
         <div class="row"><label for="ss-smooth">Line smoothing</label><input type="number" id="ss-smooth" data-ss value="5" min="1" max="101" step="2"></div>
-        <label class="check"><input type="checkbox" id="ss-line" data-ss checked> Connecting line</label>
-        <div class="row"><label for="ss-dotsize">Dot size</label><input type="number" id="ss-dotsize" data-ss value="3.5" min="0.5" step="0.5"></div>
-        <div class="row"><label for="ss-runcolor">Run colour</label>
-          <select id="ss-runcolor" data-ss><option value="#7B3294">Purple</option><option value="#BE5103">Orange</option><option value="#000000">Black</option><option value="#009E73">Green</option><option value="#D55E00">Vermilion</option></select></div>
+        <h3 class="subhead">Lines &amp; colours</h3>
+        <div class="ss-els">
+          <div class="ss-el ss-elhead"><span>Element</span><span>Colour</span><span>Width</span><span title="Show in the legend">Legend</span></div>
+          <div class="ss-el">
+            <label class="check">Running dots</label>
+            <input type="color" id="ss-runcolor" data-ss value="#7B3294" title="Colour">
+            <input type="number" id="ss-dotsize" data-ss value="3.5" min="0.5" max="15" step="0.5" title="Dot size (pt)">
+            <input type="checkbox" id="ss-lgdots" data-ss checked title="Show in the legend">
+          </div>
+          <div class="ss-el">
+            <label class="check"><input type="checkbox" id="ss-line" data-ss checked> Running line</label>
+            <input type="color" id="ss-linecolor" data-ss value="#7B3294" title="Colour">
+            <input type="number" id="ss-wline" data-ss value="1.6" min="0.1" max="8" step="0.1" title="Line width (pt)">
+            <input type="checkbox" id="ss-lgline" data-ss checked title="Show in the legend">
+          </div>
+          <div class="ss-el">
+            <label class="check">Full-data value</label>
+            <input type="color" id="ss-refcolor" data-ss value="#1f77b4" title="Colour">
+            <input type="number" id="ss-wref" data-ss value="2" min="0.1" max="8" step="0.1" title="Line width (pt)">
+            <input type="checkbox" id="ss-lgref" data-ss checked title="Show in the legend">
+          </div>
+          <div class="ss-el" id="ssSdEl">
+            <label class="check">± 1 SD</label>
+            <input type="color" id="ss-sdcolor" data-ss value="#1f77b4" title="Colour">
+            <input type="number" id="ss-wsd" data-ss value="1" min="0.1" max="8" step="0.1" title="Line width (pt)">
+            <input type="checkbox" id="ss-lgsd" data-ss checked title="Show in the legend">
+          </div>
+          <div class="ss-el">
+            <label class="check">Expected 95% range</label>
+            <input type="color" id="ss-funcolor" data-ss value="#808080" title="Colour">
+            <input type="number" id="ss-wfun" data-ss value="1" min="0.1" max="8" step="0.1" title="Line width (pt)">
+            <input type="checkbox" id="ss-lgfun" data-ss checked title="Show in the legend">
+          </div>
+          <div class="ss-el">
+            <label class="check">Value before the cut</label>
+            <input type="color" id="ss-cutcolor" data-ss value="#D55E00" title="Colour">
+            <input type="number" id="ss-wcut" data-ss value="1.2" min="0.1" max="8" step="0.1" title="Line width (pt)">
+            <input type="checkbox" id="ss-lgcut" data-ss checked title="Show in the legend">
+          </div>
+          <div class="ss-el">
+            <label class="check">Ghost runs</label>
+            <input type="color" id="ss-ghostcolor" data-ss value="#8c8c8c" title="Colour">
+            <input type="number" id="ss-wghost" data-ss value="0.8" min="0.1" max="8" step="0.1" title="Line width (pt)">
+            <input type="checkbox" id="ss-lgghost" data-ss title="Show in the legend">
+          </div>
+        </div>
+        <p class="hint">Width is the line width in pt (dot size for the running dots). Tick <i>Legend</i> for what the legend lists; turn whole elements on or off under Random draws.</p>
         <div class="row"><label for="ss-legend">Legend</label>
-          <select id="ss-legend" data-ss><option value="lower right">Lower right</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="best">Best</option><option value="off">Off</option></select></div>
-        <label class="check"><input type="checkbox" id="ss-readout" data-ss checked> Readout box (n, value, settle point)</label>
-        <div class="row"><label for="ss-readoutpos">Readout at</label>
-          <select id="ss-readoutpos" data-ss><option value="upper left">Upper left</option><option value="lower left">Lower left</option></select></div>
+          <select id="ss-legend" data-ss><option value="lower right">Lower right</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="upper left">Upper left</option><option value="best">Best</option><option value="outside">Outside, right</option><option value="off">Off</option></select></div>
+        <label class="check"><input type="checkbox" id="ss-lgvalues" data-ss checked> Numbers in legend labels (value, N, SD)</label>
+        <h3 class="subhead">Readout box</h3>
+        <label class="check"><input type="checkbox" id="ss-readout" data-ss checked> Show the readout box</label>
+        <div id="ssReadoutOpts">
+          <div class="checks4">
+            <label class="check"><input type="checkbox" id="ss-rdvalue" data-ss checked> Value at n</label>
+            <label class="check"><input type="checkbox" id="ss-rddev" data-ss checked> % from full data</label>
+            <label class="check"><input type="checkbox" id="ss-rdsettle" data-ss checked> Stays within ±tol from n =</label>
+            <label class="check"><input type="checkbox" id="ss-rdN" data-ss> Total N selected</label>
+            <label class="check"><input type="checkbox" id="ss-rdfull" data-ss> Full-data value</label>
+            <label class="check"><input type="checkbox" id="ss-rdorders" data-ss> Ghost-run summary</label>
+          </div>
+          <div class="row"><label for="ss-readoutpos">Readout at</label>
+            <select id="ss-readoutpos" data-ss><option value="upper left">Upper left</option><option value="lower left">Lower left</option><option value="upper right">Upper right</option><option value="lower right">Lower right</option></select></div>
+          <div class="row"><label for="ss-rdsize">Readout text size</label><input type="number" id="ss-rdsize" data-ss min="4" max="20" step="0.5" placeholder="auto"></div>
+        </div>
         <label class="check"><input type="checkbox" id="ss-title" data-ss checked> Title with selection</label>
         <div class="row"><label for="ss-xlabel">X label</label><input type="text" id="ss-xlabel" data-ss placeholder="Number of measurements, n"></div>
         <div class="row"><label for="ss-ylabel">Y label</label><input type="text" id="ss-ylabel" data-ss placeholder="automatic"></div>
         <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ss-ymin" data-ss placeholder="min"><input type="text" id="ss-ymax" data-ss placeholder="max"></div></div>
-        <p class="hint">Fonts and theme follow the Style settings on the Plot tab.</p>
+        <p class="hint">Fonts and theme follow the Figure tab of the Plot view.</p>
       </details>
     </aside>
     <section class="views">
@@ -710,6 +766,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=39"></script>
+  <script type="module" src="app.js?v=41"></script>
 </body>
 </html>

@@ -99,6 +99,11 @@ A second tab for "how many measurements do I need?" figures. Values are drawn in
 
 It uses the data loaded on the Plot tab, including combined sheets and calculated columns, and is saved with the plot.
 
+
+**Look → Lines & colours** has one row per figure element: running dots, running line, full-data value, ± 1 SD, expected 95% range, the value before a cut, and ghost runs. Each row sets that element's colour and width (dot size for the dots) and whether it appears in the legend. *Numbers in legend labels* turns the values, N and SD in the labels on or off. The legend can also go outside the plot.
+
+**Look → Readout box** chooses what the box shows: the value at n, % from the full data, where the run stays within the tolerance, total N, the full-data value, and a ghost-run summary. It also sets the box's corner and text size.
+
 ## Reproducing a figure offline
 
 **Download Python + settings** saves `plotter.py` plus a `*_plot.json` settings file. With numpy, pandas, matplotlib, seaborn and openpyxl installed:

@@ -2445,51 +2445,70 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
         else:
             ns = np.arange(1, N + 1)
             val = ss.get("value")
-            run_col, ref_col = ss.get("runcolor") or "#7B3294", "#1f77b4"
+            run_col = ss.get("runcolor") or "#7B3294"
+            ref_col = ss.get("refcolor") or "#1f77b4"
+            sty = lambda k, col, w: (ss.get(k + "color") or col, _num(ss.get("w" + k)) or w)
+            sd_col, sd_w = sty("sd", ref_col, 1)
+            fun_col, fun_w = sty("fun", "#808080", 1)
+            cut_col, cut_w = sty("cut", "#D55E00", 1.2)
+            gh_col, gh_w = sty("ghost", "#8c8c8c", 0.8)
+            line_col, line_w = sty("line", run_col, 1.6)
+            ref_w = _num(ss.get("wref")) or 2
+            vals = ss.get("lgvalues", True)              # numbers in the legend labels
+            def lab(key, full, short):
+                """legend label, or None when this element is left out of the legend"""
+                return (full if vals else short) if ss.get("lg" + key, key != "ghost") else None
             if mode == "mean":
                 ref = float(x.mean())
                 sd = float(x.std(ddof=1)) if N > 1 else np.nan
-                ax.axhline(ref, color=ref_col, lw=2, zorder=2,
-                           label=f"Mean of all selected data ({ref:.3f}, N = {N})")
+                ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
+                           label=lab("ref", f"Mean of all selected data ({ref:.3f}, N = {N})", "Mean of all selected data"))
                 if np.isfinite(sd) and ss.get("sdlines", True):
-                    ax.axhline(ref + sd, color=ref_col, lw=1, ls=":", zorder=2)
-                    ax.axhline(ref - sd, color=ref_col, lw=1, ls=":", zorder=2, label=f"± 1 SD of the data ({sd:.3f})")
+                    ax.axhline(ref + sd, color=sd_col, lw=sd_w, ls=":", zorder=2)
+                    ax.axhline(ref - sd, color=sd_col, lw=sd_w, ls=":", zorder=2,
+                               label=lab("sd", f"± 1 SD of the data ({sd:.3f})", "± 1 SD of the data"))
                 if cut and len(x_ref) and len(x_ref) != N:
                     mref = float(x_ref.mean())
-                    ax.axhline(mref, color="#D55E00", lw=1.2, ls="-.", zorder=2,
-                               label=f"Mean before the {ss.get('dparcol')} cut ({mref:.3f}, N = {len(x_ref)})")
+                    ax.axhline(mref, color=cut_col, lw=cut_w, ls="-.", zorder=2,
+                               label=lab("cut", f"Mean before the {ss.get('dparcol')} cut ({mref:.3f}, N = {len(x_ref)})",
+                                         f"Mean before the {ss.get('dparcol')} cut"))
                 if ss.get("funnel", True) and np.isfinite(sd):
                     m = ns
                     fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
                     half = 2 * sd / np.sqrt(m) * fpc
-                    ax.plot(m, ref + half, "--", color="0.5", lw=1, zorder=2)
-                    ax.plot(m, ref - half, "--", color="0.5", lw=1, zorder=2,
-                            label="Expected 95% range of the running mean (± 2·SD/√n)")
+                    ax.plot(m, ref + half, "--", color=fun_col, lw=fun_w, zorder=2)
+                    ax.plot(m, ref - half, "--", color=fun_col, lw=fun_w, zorder=2,
+                            label=lab("fun", "Expected 95% range of the running mean (± 2·SD/√n)",
+                                      "Expected 95% range of the running mean"))
                 what, unit_ref = "mean", ref
             else:
                 ref = float(2 * x.std(ddof=1))
-                ax.axhline(ref, color=ref_col, lw=2, zorder=2, label=f"2σ of all selected data ({ref:.3f}, N = {N})")
+                ax.axhline(ref, color=ref_col, lw=ref_w, zorder=2,
+                           label=lab("ref", f"2σ of all selected data ({ref:.3f}, N = {N})", "2σ of all selected data"))
                 if cut and len(x_ref) > 1 and len(x_ref) != N:
                     r0 = float(2 * x_ref.std(ddof=1))
-                    ax.axhline(r0, color="#D55E00", lw=1.2, ls="-.", zorder=2,
-                               label=f"2σ before the {ss.get('dparcol')} cut ({r0:.3f}, N = {len(x_ref)})")
+                    ax.axhline(r0, color=cut_col, lw=cut_w, ls="-.", zorder=2,
+                               label=lab("cut", f"2σ before the {ss.get('dparcol')} cut ({r0:.3f}, N = {len(x_ref)})",
+                                         f"2σ before the {ss.get('dparcol')} cut"))
                 if ss.get("funnel", True):
                     m = ns[1:]
                     fpc = np.sqrt(np.clip((N - m) / max(N - 1, 1), 0, 1))
                     half = 2 * ref / np.sqrt(2 * (m - 1)) * fpc
-                    ax.plot(m, ref + half, "--", color="0.5", lw=1, zorder=2)
-                    ax.plot(m, np.clip(ref - half, 0, None), "--", color="0.5", lw=1, zorder=2,
-                            label="Expected 95% spread of 2σ (normal approx.)")
+                    ax.plot(m, ref + half, "--", color=fun_col, lw=fun_w, zorder=2)
+                    ax.plot(m, np.clip(ref - half, 0, None), "--", color=fun_col, lw=fun_w, zorder=2,
+                            label=lab("fun", "Expected 95% spread of 2σ (normal approx.)", "Expected 95% spread of 2σ"))
                 what, unit_ref = "2σ", ref
             lo_i = start - 1
-            for g in ghosts:
-                ax.plot(ns[lo_i:n], g[lo_i:n], color="0.55", alpha=0.25, lw=0.8, zorder=1)
+            for gi, g in enumerate(ghosts):
+                ax.plot(ns[lo_i:n], g[lo_i:n], color=gh_col, alpha=0.25, lw=gh_w, zorder=1,
+                        label=lab("ghost", f"Other random orders ({len(ghosts)})", "Other random orders") if gi == 0 else None)
             w = int(_num(ss.get("smooth")) or 1)
             if ss.get("line", True):
-                ax.plot(ns[lo_i:n], _smooth(run[lo_i:n], w), "-", color=run_col, lw=1.6, alpha=0.9, zorder=3,
-                        label=f"Running {what} line" + (f" (smoothed, window {w})" if w > 1 else ""))
+                ax.plot(ns[lo_i:n], _smooth(run[lo_i:n], w), "-", color=line_col, lw=line_w, alpha=0.9, zorder=3,
+                        label=lab("line", f"Running {what} line" + (f" (smoothed, window {w})" if w > 1 else ""),
+                                  f"Running {what} line"))
             ax.plot(ns[lo_i:n], run[lo_i:n], "o", ms=_num(ss.get("dotsize")) or 3.5, color=run_col, alpha=0.6,
-                    zorder=3, label=f"Running {what} (this random order)")
+                    zorder=3, label=lab("dots", f"Running {what} (this random order)", f"Running {what}"))
             ax.plot(ns[n - 1], run[n - 1], "o", ms=9, mfc="none", mec="k", zorder=4)
             allv = np.concatenate([run[lo_i:]] + [g[lo_i:] for g in ghosts] + [[ref]])
             if mode == "mean" and np.isfinite(sd):
@@ -2509,20 +2528,46 @@ def subsample_render(cfg_json, fmt="png", dpi=150, meta=""):
                 ax.set_title(t + ("  |  " + "  |  ".join(bits) if bits else ""), fontsize=rc["font.size"])
             ax.grid(alpha=0.3)
             ax.minorticks_on()
-            L = ax.legend(loc=ss.get("legend", "lower right"), fontsize=rc["legend.fontsize"], framealpha=0.9,
-                          frameon=True) if ss.get("legend", "lower right") != "off" else None
+            lg = ss.get("legend", "lower right")
+            has = any(not h.get_label().startswith("_") for h in ax.get_lines())
+            if lg != "off" and has:
+                if lg == "outside":
+                    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=rc["legend.fontsize"],
+                              framealpha=0.9, frameon=True)
+                else:
+                    ax.legend(loc=lg, fontsize=rc["legend.fontsize"], framealpha=0.9, frameon=True)
             s_n = _settle(run, unit_ref, tol, start)
             dev = round(100 * (run[n - 1] - unit_ref) / unit_ref, 1) + 0.0 if unit_ref else np.nan
             readout = (f"n = {n}:  {what} = {run[n - 1]:.3f}  ({dev:+.1f}% from full-data {what})\n"
                        f"This run stays within ±{tol * 100:g}% of the full-data {what} from n = {s_n}")
-            if ss.get("readout", True):
-                top = ss.get("readoutpos", "upper left") == "upper left"
-                ax.text(0.01, 0.98 if top else 0.02, readout, transform=ax.transAxes,
-                        fontsize=rc["legend.fontsize"], va="top" if top else "bottom",
+            settles = []
+            if ghosts:
+                settles = [v for v in (_settle(r, unit_ref, tol, start) for r in [run] + list(ghosts)) if v is not None]
+            # the readout box shows only the pieces chosen in Look → Readout box
+            first = []
+            if ss.get("rdvalue", True):
+                first.append(f"n = {n}:  {what} = {run[n - 1]:.3f}")
+            if ss.get("rddev", True):
+                first.append(f"({dev:+.1f}% from full-data {what})" if first else f"{dev:+.1f}% from full-data {what}")
+            rows = ["  ".join(first)] if first else []
+            if ss.get("rdfull"):
+                rows.append(f"Full-data {what} = {unit_ref:.3f}")
+            if ss.get("rdN"):
+                rows.append(f"N selected = {N}")
+            if ss.get("rdsettle", True):
+                rows.append(f"This run stays within ±{tol * 100:g}% of the full-data {what} from n = {s_n}")
+            if ss.get("rdorders") and settles:
+                rows.append(f"{len(settles)} orders: median n = {int(np.median(settles))}, "
+                            f"90th pct = {int(np.percentile(settles, 90))}")
+            if ss.get("readout", True) and rows:
+                pos = ss.get("readoutpos", "upper left")
+                top, right = pos.startswith("upper"), pos.endswith("right")
+                ax.text(0.99 if right else 0.01, 0.98 if top else 0.02, "\n".join(rows), transform=ax.transAxes,
+                        fontsize=_num(ss.get("rdsize")) or rc["legend.fontsize"], va="top" if top else "bottom",
+                        ha="right" if right else "left",
                         bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=6)
             msgs.append(readout.replace("\n", "  ·  "))
             if ghosts:
-                settles = [v for v in (_settle(r, unit_ref, tol, start) for r in [run] + list(ghosts)) if v is not None]
                 if settles:
                     msgs.append(f"Across {len(settles)} random orders, n needed to stay within ±{tol * 100:g}% of the "
                                 f"full-data {what}: median {int(np.median(settles))}, "
