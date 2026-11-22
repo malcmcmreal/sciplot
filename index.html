@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SciPlot – publication-ready plots from your data, in the browser</title>
   <meta name="description" content="Make publication-quality x–y plots, bar charts and histograms from CSV, TXT or Excel files with matplotlib, running in your browser. Your data never leaves your computer.">
-  <link rel="stylesheet" href="style.css?v=26">
+  <link rel="stylesheet" href="style.css?v=27">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
   <main class="layout" id="plotView">
     <div class="toolcol">
       <div class="toolhead">
-        <nav class="tooltabs" role="tablist" aria-label="Tool sets">
+        <nav class="tooltabs" id="plotTabs" role="tablist" aria-label="Tool sets">
           <button type="button" role="tab" data-tt="data" title="Load data, export, saved plots">Data</button>
           <button type="button" role="tab" data-tt="plot" title="Plot type, series, type options, markers, size &amp; shape">Plot</button>
           <button type="button" role="tab" data-tt="stats" title="Mean/median/SD lines, fixed lines, fits, group summaries">Stats</button>
@@ -95,6 +95,7 @@
         <p class="hint">Exported figures remember their setup: drop one back onto SciPlot to keep editing it.</p>
         <label class="check"><input type="checkbox" id="embedData"> Also store the data inside exported figures (bigger files; don't use for figures you send to journals if the data are private)</label>
       </details>
+      <div id="savedHome">
       <details class="sec" id="sec-saved" open>
         <summary>Saved plots &amp; settings <span class="badge" id="b-saved"></span></summary>
         
@@ -119,6 +120,7 @@
               </div>
               
       </details>
+      </div>
       </div>
       <div class="ttpane" data-tt="plot" hidden>
       <details class="sec" id="sec-plot" open>
@@ -625,34 +627,18 @@
   </main>
 
   <main class="layout" id="ssView" hidden>
+    <div class="toolcol">
+      <div class="toolhead">
+        <nav class="tooltabs" id="ssTabs" role="tablist" aria-label="Subsampling tool sets">
+          <button type="button" role="tab" data-sstt="data" title="Data, what to track, filters">Data</button>
+          <button type="button" role="tab" data-sstt="draws" title="Seed, ghost runs, tolerance, expected range">Draws</button>
+          <button type="button" role="tab" data-sstt="look" title="Lines, colours, legend, readout, labels">Look</button>
+          <button type="button" role="tab" data-sstt="figure" title="Size, theme, colour scheme, panels">Figure</button>
+          <button type="button" role="tab" data-sstt="save" title="Export, saved plots, project files">Save</button>
+        </nav>
+      </div>
     <aside class="controls">
-      <details class="sec" id="sec-sslayout" open>
-        <summary>Figure &amp; panels <span class="badge" id="b-sslayout"></span></summary>
-        <div class="row"><label for="sslay-size">Figure size</label>
-          <select id="sslay-size" data-sslay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option><option value="custom">Custom…</option></select></div>
-        <div class="row" id="ssCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="number" id="sslay-width" data-sslay value="7.2" min="1" max="30" step="0.1"><input type="number" id="sslay-height" data-sslay value="4" min="0.8" max="30" step="0.1"></div></div>
-        <div class="row"><label for="sslay-theme">Theme</label><select id="sslay-theme" data-sslay><option value="">Same as the Plot tab</option><option value="publication">Publication (boxed, inward ticks)</option><option value="ticks">seaborn ticks</option><option value="white">seaborn white</option><option value="whitegrid">seaborn whitegrid</option><option value="darkgrid">seaborn darkgrid</option></select></div>
-        <div class="row"><label for="sslay-scheme" title="Recolour every element at once (you can still change each one under Look)">Colour scheme</label><select id="sslay-scheme"><option value="">Choose to apply…</option><option value="sciplot">SciPlot default (purple / blue)</option><option value="deep">seaborn deep</option><option value="colorblind">seaborn colorblind</option><option value="muted">seaborn muted</option><option value="bright">seaborn bright</option><option value="dark">seaborn dark</option><option value="okabe">Okabe–Ito</option><option value="grey">Greyscale</option></select></div>
-        <div class="row"><label title="Background colour of the plot area (off: the theme's own)">Plot background</label><label class="check inline"><input type="checkbox" id="sslay-bgon" data-sslaychk> custom</label><input type="color" id="sslay-bg" data-sslay value="#f4f4f4"></div>
-        <div class="row"><label for="sslay-fontsize">Font size (pt)</label><input type="number" id="sslay-fontsize" data-sslay min="5" max="24" step="0.5" placeholder="as Plot tab"></div>
-        <div class="row"><label for="sslay-aspect" title="Figure height = width × this (blank: from the size)">Height ÷ width</label><input type="number" id="sslay-aspect" data-sslay min="0.1" max="5" step="0.05" placeholder="auto"></div>
-        <p class="hint" id="ssLayHint">One plot. Use <b>+ Duplicate</b> above the plot to add panels, e.g. one per orientation; each keeps its own settings.</p>
-        <div id="ssLayMulti" hidden>
-          <div class="row"><label for="sslay-cols">Columns</label><input type="number" id="sslay-cols" data-sslay min="1" max="20" step="1" placeholder="auto"></div>
-          <div class="row"><label for="sslay-sharex">Same X range</label><select id="sslay-sharex" data-sslay><option value="none">No</option><option value="col">Per column</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
-          <div class="row"><label for="sslay-sharey">Same Y range</label><select id="sslay-sharey" data-sslay><option value="none">No</option><option value="row">Per row</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
-          <div class="row"><label for="sslay-titles">Axis titles</label><select id="sslay-titles" data-sslay><option value="each">On every panel</option><option value="outer">Outer panels only</option><option value="shared">One shared X and Y title</option></select></div>
-          <div class="row" id="ssSharedTitles" hidden><label>Shared X · Y title</label><div class="pair"><input type="text" id="sslay-xtitle" data-sslay placeholder="automatic"><input type="text" id="sslay-ytitle" data-sslay placeholder="automatic"></div></div>
-          <div class="row"><label for="sslay-inner">Inner tick labels</label><select id="sslay-inner" data-sslay><option value="keep">Keep</option><option value="ticks">Hide between panels</option></select></div>
-          <div class="row"><label for="sslay-paneltitles">Panel titles</label><select id="sslay-paneltitles" data-sslay><option value="on">Selection (e.g. Sheet = 10)</option><option value="off">None</option></select></div>
-          <div class="row"><label for="sslay-labels">Panel letters</label><select id="sslay-labels" data-sslay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="A">A</option><option value="(A)">(A)</option><option value="none">None</option></select><select id="sslay-labelpos" data-sslay><option value="outside">outside</option><option value="inside">inside</option></select></div>
-          <div class="row"><label for="sslay-legendon">Legend</label><select id="sslay-legendon" data-sslay><option value="first">First panel only</option><option value="each">Every panel (as set in Look)</option><option value="none">None</option></select></div>
-          <div class="row"><label for="sslay-readouton">Readout boxes</label><select id="sslay-readouton" data-sslay><option value="each">Every panel (as set in Look)</option><option value="none">None</option></select></div>
-          <div class="row"><label for="sslay-spacing">Spacing</label><input type="number" id="sslay-spacing" data-sslay value="0.02" min="0" max="0.3" step="0.01"></div>
-          <p class="hint">Readout boxes and legends can crowd small panels: shrink the readout text or turn items off under Look.</p>
-        </div>
-      </details>
-
+      <div class="ttpane" data-sstt="data">
       <details class="sec" id="sec-ssdata" open>
         <summary>Data <span class="badge" id="b-ssdata"></span></summary>
         <p class="hint" id="ssNoData">Load data on the <b>Plot</b> tab first; it is shared with this tab (including combined sheets and calculated columns).</p>
@@ -661,6 +647,7 @@
         <div class="row" id="ssWhereValRow"><label for="ss-whereval">equals</label><select id="ss-whereval" data-ss></select></div>
         <p class="hint">e.g. <i>Grain Orientation</i> = 10 to look at one tilt of the combined sheets.</p>
       </details>
+
       <details class="sec" id="sec-sswhat" open>
         <summary>What to track <span class="badge" id="b-sswhat"></span></summary>
         <div class="row"><label for="ss-mode">Track</label>
@@ -668,6 +655,7 @@
         <div class="row"><label for="ss-value">of column</label><select id="ss-value" data-ss></select></div>
         <p class="hint">Values are drawn in a random order without replacement; the plot shows the statistic of the first <i>n</i> as measurements are added.</p>
       </details>
+
       <details class="sec" id="sec-ssfilt">
         <summary>Filters <span class="badge" id="b-ssfilt"></span></summary>
         <div class="row"><label for="ss-anglecol">Angle column</label><select id="ss-anglecol" data-ss></select></div>
@@ -676,7 +664,9 @@
         <div class="row"><label>Dpar range</label><div class="pair"><input type="text" id="ss-dmin" data-ss placeholder="min"><input type="text" id="ss-dmax" data-ss placeholder="max"></div></div>
         <p class="hint">A Dpar range simulates measuring only within that window; a dash-dot line shows the value before the cut, so you can see any bias it introduces.</p>
       </details>
-      <details class="sec" id="sec-ssrand">
+      </div>
+      <div class="ttpane" data-sstt="draws" hidden>
+      <details class="sec" id="sec-ssrand" open>
         <summary>Random draws <span class="badge" id="b-ssrand"></span></summary>
         <div class="row"><label for="ss-seed">Seed</label><input type="number" id="ss-seed" data-ss value="1" step="1"><button type="button" id="ssNewOrder" class="ghost small">New random order</button></div>
         <div class="row"><label for="ss-ghosts">Ghost runs</label><input type="number" id="ss-ghosts" data-ss value="0" min="0" max="200" step="1" title="Other random orders drawn faintly; also gives the median and 90th-percentile n"></div>
@@ -685,7 +675,9 @@
         <label class="check"><input type="checkbox" id="ss-funnel" data-ss checked> Expected 95% spread (dashed)</label>
         <label class="check" id="ssSdRow"><input type="checkbox" id="ss-sdlines" data-ss checked> ± 1 SD of the data (dotted)</label>
       </details>
-      <details class="sec" id="sec-sslook">
+      </div>
+      <div class="ttpane" data-sstt="look" hidden>
+      <details class="sec" id="sec-sslook" open>
         <summary>Look <span class="badge" id="b-sslook"></span></summary>
         <div class="row"><label for="ss-smooth">Line smoothing</label><input type="number" id="ss-smooth" data-ss value="5" min="1" max="101" step="2"></div>
         <h3 class="subhead">Lines &amp; colours</h3>
@@ -759,7 +751,51 @@
         <div class="row"><label>Y range</label><div class="pair"><input type="text" id="ss-ymin" data-ss placeholder="min"><input type="text" id="ss-ymax" data-ss placeholder="max"></div></div>
         <p class="hint">Font and (unless set under Figure &amp; panels) theme follow the Figure tab of the Plot view.</p>
       </details>
+      </div>
+      <div class="ttpane" data-sstt="figure" hidden>
+      <details class="sec" id="sec-sslayout" open>
+        <summary>Figure &amp; panels <span class="badge" id="b-sslayout"></span></summary>
+        <div class="row"><label for="sslay-size">Figure size</label>
+          <select id="sslay-size" data-sslay><option value="single">Single column (89 mm)</option><option value="onehalf">1.5 column (140 mm)</option><option value="double" selected>Full width (183 mm)</option><option value="wide">Wide (10 × 5.5 in)</option><option value="custom">Custom…</option></select></div>
+        <div class="row" id="ssCustomRow" hidden><label>W × H (in)</label><div class="pair"><input type="number" id="sslay-width" data-sslay value="7.2" min="1" max="30" step="0.1"><input type="number" id="sslay-height" data-sslay value="4" min="0.8" max="30" step="0.1"></div></div>
+        <div class="row"><label for="sslay-theme">Theme</label><select id="sslay-theme" data-sslay><option value="">Same as the Plot tab</option><option value="publication">Publication (boxed, inward ticks)</option><option value="ticks">seaborn ticks</option><option value="white">seaborn white</option><option value="whitegrid">seaborn whitegrid</option><option value="darkgrid">seaborn darkgrid</option></select></div>
+        <div class="row"><label for="sslay-scheme" title="Recolour every element at once (you can still change each one under Look)">Colour scheme</label><select id="sslay-scheme"><option value="">Choose to apply…</option><option value="sciplot">SciPlot default (purple / blue)</option><option value="deep">seaborn deep</option><option value="colorblind">seaborn colorblind</option><option value="muted">seaborn muted</option><option value="bright">seaborn bright</option><option value="dark">seaborn dark</option><option value="okabe">Okabe–Ito</option><option value="grey">Greyscale</option></select></div>
+        <div class="row"><label title="Background colour of the plot area (off: the theme's own)">Plot background</label><label class="check inline"><input type="checkbox" id="sslay-bgon" data-sslaychk> custom</label><input type="color" id="sslay-bg" data-sslay value="#f4f4f4"></div>
+        <div class="row"><label for="sslay-fontsize">Font size (pt)</label><input type="number" id="sslay-fontsize" data-sslay min="5" max="24" step="0.5" placeholder="as Plot tab"></div>
+        <div class="row"><label for="sslay-aspect" title="Figure height = width × this (blank: from the size)">Height ÷ width</label><input type="number" id="sslay-aspect" data-sslay min="0.1" max="5" step="0.05" placeholder="auto"></div>
+        <p class="hint" id="ssLayHint">One plot. Use <b>+ Duplicate</b> above the plot to add panels, e.g. one per orientation; each keeps its own settings.</p>
+        <div id="ssLayMulti" hidden>
+          <div class="row"><label for="sslay-cols">Columns</label><input type="number" id="sslay-cols" data-sslay min="1" max="20" step="1" placeholder="auto"></div>
+          <div class="row"><label for="sslay-sharex">Same X range</label><select id="sslay-sharex" data-sslay><option value="none">No</option><option value="col">Per column</option><option value="row">Per row</option><option value="all">All panels</option></select></div>
+          <div class="row"><label for="sslay-sharey">Same Y range</label><select id="sslay-sharey" data-sslay><option value="none">No</option><option value="row">Per row</option><option value="col">Per column</option><option value="all">All panels</option></select></div>
+          <div class="row"><label for="sslay-titles">Axis titles</label><select id="sslay-titles" data-sslay><option value="each">On every panel</option><option value="outer">Outer panels only</option><option value="shared">One shared X and Y title</option></select></div>
+          <div class="row" id="ssSharedTitles" hidden><label>Shared X · Y title</label><div class="pair"><input type="text" id="sslay-xtitle" data-sslay placeholder="automatic"><input type="text" id="sslay-ytitle" data-sslay placeholder="automatic"></div></div>
+          <div class="row"><label for="sslay-inner">Inner tick labels</label><select id="sslay-inner" data-sslay><option value="keep">Keep</option><option value="ticks">Hide between panels</option></select></div>
+          <div class="row"><label for="sslay-paneltitles">Panel titles</label><select id="sslay-paneltitles" data-sslay><option value="on">Selection (e.g. Sheet = 10)</option><option value="off">None</option></select></div>
+          <div class="row"><label for="sslay-labels">Panel letters</label><select id="sslay-labels" data-sslay><option value="(a)">(a)</option><option value="a">a</option><option value="a)">a)</option><option value="A">A</option><option value="(A)">(A)</option><option value="none">None</option></select><select id="sslay-labelpos" data-sslay><option value="outside">outside</option><option value="inside">inside</option></select></div>
+          <div class="row"><label for="sslay-legendon">Legend</label><select id="sslay-legendon" data-sslay><option value="first">First panel only</option><option value="each">Every panel (as set in Look)</option><option value="none">None</option></select></div>
+          <div class="row"><label for="sslay-readouton">Readout boxes</label><select id="sslay-readouton" data-sslay><option value="each">Every panel (as set in Look)</option><option value="none">None</option></select></div>
+          <div class="row"><label for="sslay-spacing">Spacing</label><input type="number" id="sslay-spacing" data-sslay value="0.02" min="0" max="0.3" step="0.01"></div>
+          <p class="hint">Readout boxes and legends can crowd small panels: shrink the readout text or turn items off under Look.</p>
+        </div>
+      </details>
+      </div>
+      <div class="ttpane" data-sstt="save" hidden>
+      <details class="sec" id="sec-ssexport" open>
+        <summary>Export <span class="badge" id="b-ssexport"></span></summary>
+        <div class="row-inline wrap">
+          <button type="button" data-ssexp="pdf">PDF</button>
+          <button type="button" data-ssexp="svg">SVG</button>
+          <button type="button" data-ssexp="png">PNG</button>
+          <span class="spacer"></span>
+          <button type="button" id="ssCsv" class="ghost">Running values (CSV)</button>
+        </div>
+        <p class="hint">Exports show the curve up to the current <i>n</i>; drag the slider to the end for the full run. Exported figures reopen this tab with its settings.</p>
+      </details>
+      <div id="ssSavedHome"></div>
+      </div>
     </aside>
+    </div>
     <section class="views">
       <div class="figpanel">
         <div class="panelbar" id="ssPanelBar">
@@ -780,17 +816,6 @@
         <div class="figwrap"><div class="stage" id="ssStage"><img id="ssFig" alt="Subsampling plot"></div>
           <p class="placeholder" id="ssPlaceholder">Load data on the Plot tab, then choose what to track.</p></div>
       </div>
-      <div class="export">
-        <h2>Export</h2>
-        <div class="row-inline">
-          <button type="button" data-ssexp="pdf">PDF</button>
-          <button type="button" data-ssexp="svg">SVG</button>
-          <button type="button" data-ssexp="png">PNG</button>
-          <span class="spacer"></span>
-          <button type="button" id="ssCsv" class="ghost">Running values (CSV)</button>
-        </div>
-        <p class="hint">Exports show the curve up to the current <i>n</i>; drag the slider to the end for the full run. Exported figures reopen this tab with its settings.</p>
-      </div>
       <div id="ssMsgs" class="msgs"></div>
       <div id="ssErr" class="err"></div>
     </section>
@@ -801,6 +826,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=45"></script>
+  <script type="module" src="app.js?v=46"></script>
 </body>
 </html>

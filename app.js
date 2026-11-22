@@ -1369,7 +1369,7 @@ const DB = {
 };
 
 function thumbnail() {
-  const img = $('fig');
+  const img = currentView === 'ss' ? $('ssFig') : $('fig');
   if (!img.naturalWidth) return '';
   const cv = document.createElement('canvas');
   cv.width = 168; cv.height = 126;
@@ -1460,6 +1460,8 @@ function setView(v) {
   $('plotView').hidden = currentView !== 'plot';
   $('ssView').hidden = currentView !== 'ss';
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.view === currentView));
+  // one Saved plots section, shown on whichever view is open
+  $(currentView === 'ss' ? 'ssSavedHome' : 'savedHome').appendChild($('sec-saved'));
   if (currentView === 'ss') ssSchedule(0);
 }
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
@@ -1894,16 +1896,16 @@ document.querySelectorAll('[data-lay]').forEach((el) => {
 
 // ---------------------------------------------------------------- tool tabs (sidebar)
 const TT_KEY = 'sciplot-tooltab';
-function toolTab() { return document.querySelector('.tooltabs button.on')?.dataset.tt || 'data'; }
+function toolTab() { return document.querySelector('#plotTabs button.on')?.dataset.tt || 'data'; }
 function setToolTab(t) {
-  document.querySelectorAll('.tooltabs button').forEach((b) => {
+  document.querySelectorAll('#plotTabs button').forEach((b) => {
     b.classList.toggle('on', b.dataset.tt === t);
     b.setAttribute('aria-selected', b.dataset.tt === t);
   });
-  document.querySelectorAll('.ttpane').forEach((p) => { p.hidden = p.dataset.tt !== t; });
+  document.querySelectorAll('.ttpane[data-tt]').forEach((p) => { p.hidden = p.dataset.tt !== t; });
   try { localStorage.setItem(TT_KEY, t); } catch (e) { /* storage unavailable */ }
 }
-document.querySelector('.tooltabs').addEventListener('click', (e) => {
+document.querySelector('#plotTabs').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tt]');
   if (b) setToolTab(b.dataset.tt);
 });
@@ -1912,6 +1914,26 @@ document.querySelector('.tooltabs').addEventListener('click', (e) => {
   try { t = localStorage.getItem(TT_KEY) || 'data'; } catch (e) { /* storage unavailable */ }
   t = { file: 'data', layout: 'figure' }[t] || t;          // names used before the regrouping
   setToolTab(['data', 'plot', 'stats', 'axes', 'colour', 'figure'].includes(t) ? t : 'data');
+}
+
+// Subsampling has its own tool tabs
+const SSTT_KEY = 'sciplot-sstab';
+function setSSTab(t) {
+  document.querySelectorAll('#ssTabs button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.sstt === t);
+    b.setAttribute('aria-selected', b.dataset.sstt === t);
+  });
+  document.querySelectorAll('.ttpane[data-sstt]').forEach((p) => { p.hidden = p.dataset.sstt !== t; });
+  try { localStorage.setItem(SSTT_KEY, t); } catch (e) { /* storage unavailable */ }
+}
+$('ssTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-sstt]');
+  if (b) setSSTab(b.dataset.sstt);
+});
+{
+  let t = 'data';
+  try { t = localStorage.getItem(SSTT_KEY) || 'data'; } catch (e) { /* storage unavailable */ }
+  setSSTab(['data', 'draws', 'look', 'figure', 'save'].includes(t) ? t : 'data');
 }
 
 // ---------------------------------------------------------------- sections: remember open / closed
