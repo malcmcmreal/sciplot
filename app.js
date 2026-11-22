@@ -1703,7 +1703,7 @@ function ssBaseName() {
 }
 function ssNamePlaceholder() { $('ssexpname').placeholder = `${baseName()}_running_${$('ss-mode').value}`; }
 
-// legend entries the user has unticked (Colour → Legend → Items in the legend)
+// legend entries the user has unticked (Figure → Legend → Items in the legend)
 var legendHide = new Set();
 function buildLegendItems(items) {
   const seen = new Set();

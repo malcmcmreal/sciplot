@@ -32,8 +32,8 @@
           <button type="button" role="tab" data-tt="plot" title="Plot type, series, type options, markers, size &amp; shape">Plot</button>
           <button type="button" role="tab" data-tt="stats" title="Mean/median/SD lines, fixed lines, fits, group summaries">Stats</button>
           <button type="button" role="tab" data-tt="axes" title="Titles, axis labels, ranges, log scales, ticks">Axes</button>
-          <button type="button" role="tab" data-tt="colour" title="Colours, colour by a column, colour map &amp; bar, legend">Colour</button>
-          <button type="button" role="tab" data-tt="figure" title="Figure size, font, theme, multi-panel layout">Figure</button>
+          <button type="button" role="tab" data-tt="colour" title="Colours, colour by a column, colour map &amp; bar">Colour</button>
+          <button type="button" role="tab" data-tt="figure" title="Figure size, font, theme, legend, multi-panel layout">Figure</button>
         </nav>
       </div>
     <aside class="controls">
@@ -481,23 +481,6 @@
         </div>
       </details>
 
-      <details class="sec" id="sec-legend" open>
-        <summary>Legend <span class="badge" id="b-legend"></span></summary>
-        <div class="row"><label for="legend">Legend</label>
-          <select id="legend" data-cfg><option value="best">Best position (below if it has colour/size/shape keys)</option><option value="upper left">Upper left</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="lower right">Lower right</option><option value="outside">Outside, right</option><option value="below">Below plot</option><option value="off">Off</option></select></div>
-        <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
-        <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
-        <div id="legendItemsBox" hidden>
-          <h3 class="subhead">Items in the legend</h3>
-          <div id="legendItems" class="legend-items"></div>
-          <p class="hint">Untick to leave an entry out. Entries are matched ignoring their numbers, so a hidden "mean = …" stays hidden when the value changes.</p>
-        </div>
-        <div id="legendMultiRows" hidden>
-        <h3 class="subhead">Multi-panel figures</h3>
-        <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
-          <select id="lay-legend" data-lay><option value="each">Each panel</option><option value="right">One shared key, right</option><option value="below">One shared key, below</option></select></div>
-        </div>
-      </details>
       </div>
       <div class="ttpane" data-tt="figure" hidden>
       <details class="sec" id="sec-figure" open>
@@ -525,6 +508,24 @@
         <div class="row"><label for="font">Font</label>
           <select id="font" data-cfg><option value="sans">Sans (DejaVu)</option><option value="serif">Serif (STIX, Times-like)</option><option value="cm">Computer Modern (LaTeX)</option></select></div>
         <div class="row"><label for="fontsize">Font size (pt)</label><input type="number" id="fontsize" data-cfg value="9" min="5" max="24"></div>
+      </details>
+
+      <details class="sec" id="sec-legend" open>
+        <summary>Legend <span class="badge" id="b-legend"></span></summary>
+        <div class="row"><label for="legend">Legend</label>
+          <select id="legend" data-cfg><option value="best">Best position (below if it has colour/size/shape keys)</option><option value="upper left">Upper left</option><option value="upper right">Upper right</option><option value="lower left">Lower left</option><option value="lower right">Lower right</option><option value="outside">Outside, right</option><option value="below">Below plot</option><option value="off">Off</option></select></div>
+        <label class="check"><input type="checkbox" id="legendframe" data-cfg> Box around legend</label>
+        <label class="check"><input type="checkbox" id="legendsingle" data-cfg> Show legend for a single series</label>
+        <div id="legendItemsBox" hidden>
+          <h3 class="subhead">Items in the legend</h3>
+          <div id="legendItems" class="legend-items"></div>
+          <p class="hint">Untick to leave an entry out. Entries are matched ignoring their numbers, so a hidden "mean = …" stays hidden when the value changes.</p>
+        </div>
+        <div id="legendMultiRows" hidden>
+        <h3 class="subhead">Multi-panel figures</h3>
+        <div class="row"><label for="lay-legend" title="With one shared key, legends and colour bars that repeat across panels are shown once for the whole figure">Legend / colour key</label>
+          <select id="lay-legend" data-lay><option value="each">Each panel</option><option value="right">One shared key, right</option><option value="below">One shared key, below</option></select></div>
+        </div>
       </details>
 
       <details class="sec" id="sec-layout" open>
@@ -862,6 +863,6 @@
       Source and issues: <a href="https://github.com/malcmcmreal/sciplot">github.com/malcmcmreal/sciplot</a>.</p>
   </footer>
 
-  <script type="module" src="app.js?v=49"></script>
+  <script type="module" src="app.js?v=50"></script>
 </body>
 </html>

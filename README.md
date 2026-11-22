@@ -48,8 +48,8 @@ Settings are grouped by the part of the figure they change, the way GraphPad Pri
 | **Plot** | plot type, X and series (Y, error bars, per-series style) · type options (bins, KDE, polar, violin) · markers, size by, shape by, vectors |
 | **Stats** | mean / median / SD / formula lines · fixed lines · fits · group summaries |
 | **Axes** | title, panel label, axis titles and their size/position · ranges, log, invert, ticks, grid, despine, hide axes |
-| **Colour** | palette · colour by a column · colour map, range and colour bar · legend, including one shared key for multi-panel figures |
-| **Figure** | figure size, theme, font · panels: grid, spacing, shared axes, panel letters, this panel's size |
+| **Colour** | palette · colour by a column · colour map, range and colour bar |
+| **Figure** | figure size, theme, font · legend (position, box, which items, one shared key for multi-panel figures) · panels: grid, spacing, shared axes, panel letters, this panel's size |
 
 The sidebar opens on Plot once data is loaded and remembers the last tab. The tabs stay anchored at the top while you scroll. Less-used settings sit in small fold-out menus. Calculated columns have their own panel under the figure.
 
@@ -65,7 +65,7 @@ Under **Axes → Titles & labels → Title & axis-title size and position**, eac
 - **Error bars:** colour, width and cap size.
 - **Legend label:** custom text for the group entry.
 
-**Colour → Legend → Items in the legend** lists every entry of the active panel; untick one to leave it out. Entries are matched ignoring their numbers, so a hidden "mean = …" stays hidden when the data change.
+**Figure → Legend → Items in the legend** lists every entry of the active panel; untick one to leave it out. Entries are matched ignoring their numbers, so a hidden "mean = …" stays hidden when the data change.
 
 ## Calculated columns
 
